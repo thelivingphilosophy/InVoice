@@ -38,7 +38,11 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
   const loadJobs = async () => {
     try {
       const allJobs = await storageService.getAllJobs();
-      setJobs(allJobs);
+      // Sort by creation date, newest first (descending order)
+      const sortedJobs = allJobs.sort((a, b) => 
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+      );
+      setJobs(sortedJobs);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       Alert.alert('Error', 'Failed to load jobs');
@@ -221,10 +225,10 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
                   />
                   <View style={styles.jobInfo}>
                     <Text style={[styles.jobCustomer, { color: colors.text }]}>
-                      {job.customer || 'Unnamed Customer'}
+                      {new Date(job.dateCreated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                     <Text style={[styles.jobType, { color: colors.text }]}>
-                      {job.jobType || 'General Work'}
+                      {job.customer || 'Unnamed Customer'} - {job.jobType || 'General Work'}
                     </Text>
                     <Text style={[styles.jobDate, { color: colors.text }]}>
                       {new Date(job.dateCreated).toLocaleDateString()}

@@ -512,97 +512,6 @@ export default function MinimalJobWorkflow({
     );
   }
 
-  const testKnownAudioFile = async () => {
-    setState('processing');
-    try {
-      console.log('🧪 Running comprehensive audio tests...');
-      
-      // Test 1: Check API key
-      console.log('🔑 Test 1: API Key check');
-      const hasKey = openAiApiKey && openAiApiKey.trim().length > 0;
-      console.log('API key exists:', hasKey, 'Length:', openAiApiKey?.length);
-      
-      if (!hasKey) {
-        Alert.alert('Test Failed', 'No API key provided');
-        return;
-      }
-      
-      // Test 2: Test with a simple fetch to check credentials
-      console.log('🌐 Test 2: API credentials check');
-      try {
-        const credTest = await fetch('https://api.openai.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${openAiApiKey}` }
-        });
-        console.log('Credentials test status:', credTest.status);
-        if (credTest.status === 401) {
-          Alert.alert('Test Failed', 'Invalid API key');
-          return;
-        }
-      } catch (error) {
-        console.log('Credentials test failed:', error);
-      }
-      
-      // Test 3: Record a quick audio and examine it
-      console.log('🎤 Test 3: Record and examine audio');
-      
-      // Stop any existing audio first
-      try {
-        await audioQuestionService.forceStop();
-        if (useTts && Tts) {
-          Tts.stop();
-        } else {
-          Speech.stop();
-        }
-      } catch (error) {
-        console.log('Audio stop error:', error);
-      }
-      
-      // Clear any audio timer
-      if (audioTimerRef.current) {
-        clearTimeout(audioTimerRef.current);
-        audioTimerRef.current = null;
-      }
-      
-      // Wait a moment then start recording
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log('🎤 Starting test recording...');
-      await startRecording();
-      console.log('🎤 Recording for 3 seconds...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Record for 3 seconds
-      console.log('🎤 Stopping test recording...');
-      const audioUri = await stopRecording();
-      
-      if (audioUri) {
-        console.log('✅ Audio recorded successfully:', audioUri);
-        const debugInfo = await transcriptionService.debugRecordedFile(audioUri);
-        console.log('🔍 Audio analysis:', debugInfo);
-        
-        // Test 4: Try raw upload approaches
-        console.log('📤 Test 4: Testing raw upload approaches');
-        const rawResult = await transcriptionService.testRawUpload(audioUri);
-        
-        Alert.alert(
-          'Test Results', 
-          `API Key: Valid ✅\nCredentials: Valid ✅\nAudio: Recorded ✅\nUpload Test: ${rawResult.success ? 'SUCCESS! ✅' : 'Failed ❌'}\n\nResult: ${rawResult.success ? rawResult.text?.substring(0, 100) + '...' : rawResult.error}`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        console.log('❌ No audio recorded');
-        Alert.alert(
-          'Test Results', 
-          `API Key: Valid ✅\nCredentials: Valid ✅\nAudio: Failed to record ❌\n\nThe recording was interrupted or failed. Check microphone permissions.`,
-          [{ text: 'OK' }]
-        );
-      }
-      
-    } catch (error) {
-      console.error('Test error:', error);
-      Alert.alert('Test Error', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setState('ready');
-    }
-  };
 
   // Handle review state
   const isReviewMode = state === 'review' && currentStepIndex >= DEFAULT_JOB_STEPS.length;
@@ -622,17 +531,9 @@ export default function MinimalJobWorkflow({
           <Text style={[styles.backText, { color: '#000000' }]}>Home</Text>
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Job Entry</Text>
-        <View style={{ flexDirection: 'row', gap: 15 }}>
-          <TouchableOpacity 
-            onPress={testKnownAudioFile}
-            style={{ padding: 8, backgroundColor: '#ff6b35', borderRadius: 20 }}
-          >
-            <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>TEST</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={repeatQuestion}>
-            <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={repeatQuestion}>
+          <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
+        </TouchableOpacity>
       </View>
 
       {/* Progress */}

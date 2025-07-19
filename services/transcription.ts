@@ -13,123 +13,116 @@ export class TranscriptionService {
     this.apiKey = apiKey;
   }
 
-  async testRawUpload(audioUri: string): Promise<TranscriptionResult> {
+  async testMp3Access(): Promise<TranscriptionResult> {
     try {
-      console.log('🧪 RAW UPLOAD TEST - bypassing all our logic');
+      console.log('🎵 TESTING MP3 FILE ACCESS');
+      const results: string[] = [];
       
-      // Test 1: Most basic FormData approach
-      console.log('📤 Test 1: Basic FormData with file URI');
-      const formData1 = new FormData();
-      formData1.append('file', {
-        uri: audioUri,
-        type: 'audio/m4a',
-        name: 'test.m4a',
-      } as any);
-      formData1.append('model', 'whisper-1');
+      // Test 1: List all possible asset directories
+      console.log('📁 Test 1: Exploring asset directories');
+      const directoriesToCheck = [
+        FileSystem.bundleDirectory,
+        FileSystem.documentDirectory,
+        FileSystem.cacheDirectory,
+        `${FileSystem.bundleDirectory}assets/`,
+        `${FileSystem.bundleDirectory}assets/audio/`,
+      ];
       
-      const response1 = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.apiKey}` },
-        body: formData1,
-      });
-      
-      console.log('📡 Basic test response:', response1.status);
-      if (response1.ok) {
-        const text = await response1.text();
-        return { success: true, text };
-      }
-      
-      // Test 2: Try with different MIME type
-      console.log('📤 Test 2: Different MIME type');
-      const formData2 = new FormData();
-      formData2.append('file', {
-        uri: audioUri,
-        type: 'audio/mpeg',
-        name: 'test.mp3',
-      } as any);
-      formData2.append('model', 'whisper-1');
-      
-      const response2 = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.apiKey}` },
-        body: formData2,
-      });
-      
-      console.log('📡 MIME test response:', response2.status);
-      if (response2.ok) {
-        const text = await response2.text();
-        return { success: true, text };
-      }
-      
-      // Test 3: Try as generic audio
-      console.log('📤 Test 3: Generic audio type');
-      const formData3 = new FormData();
-      formData3.append('file', {
-        uri: audioUri,
-        type: 'audio/*',
-        name: 'test.audio',
-      } as any);
-      formData3.append('model', 'whisper-1');
-      
-      const response3 = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.apiKey}` },
-        body: formData3,
-      });
-      
-      console.log('📡 Generic test response:', response3.status);
-      if (response3.ok) {
-        const text = await response3.text();
-        return { success: true, text };
-      }
-
-      // Test 4: Try FileSystem.uploadAsync (works differently than FormData)
-      console.log('📤 Test 4: FileSystem.uploadAsync approach');
-      try {
-        const uploadResponse = await FileSystem.uploadAsync(
-          'https://api.openai.com/v1/audio/transcriptions',
-          audioUri,
-          {
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            fieldName: 'file',
-            headers: {
-              'Authorization': `Bearer ${this.apiKey}`,
-            },
-            parameters: {
-              model: 'whisper-1',
-              response_format: 'text',
-            },
+      for (const dir of directoriesToCheck) {
+        try {
+          const dirInfo = await FileSystem.getInfoAsync(dir);
+          console.log(`📂 Directory ${dir}: exists=${dirInfo.exists}`);
+          
+          if (dirInfo.exists && dirInfo.isDirectory) {
+            const contents = await FileSystem.readDirectoryAsync(dir);
+            console.log(`📂 Contents of ${dir}:`, contents);
+            results.push(`✅ Directory ${dir}: ${contents.join(', ')}`);
+          } else {
+            results.push(`❌ Directory ${dir}: not found or not directory`);
           }
-        );
-        
-        console.log('📡 FileSystem upload response:', uploadResponse.status);
-        if (uploadResponse.status === 200) {
-          return { success: true, text: uploadResponse.body };
+        } catch (error) {
+          results.push(`❌ Directory ${dir}: error ${error}`);
         }
-        
-        console.log('📤 Test 4 error:', uploadResponse.body);
-      } catch (uploadError) {
-        console.log('📤 Test 4 exception:', uploadError);
       }
       
-      // All failed - get detailed error messages
-      const errorText1 = await response1.text();
-      const errorText2 = await response2.text();
-      const errorText3 = await response3.text();
+      // Test 2: Use existing speech MP3 files we found
+      console.log('🔍 Test 2: Using existing speech MP3 files');
       
-      console.log('📤 Test 1 error:', errorText1);
-      console.log('📤 Test 2 error:', errorText2);
-      console.log('📤 Test 3 error:', errorText3);
+      // Pick a few recent speech MP3 files from the documents directory
+      const speechMp3Files = [
+        `${FileSystem.documentDirectory}speech_1752844263396.mp3`,
+        `${FileSystem.documentDirectory}speech_1752844260389.mp3`,
+        `${FileSystem.documentDirectory}speech_1752844249604.mp3`,
+      ];
+      
+      for (const speechPath of speechMp3Files) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(speechPath);
+          console.log(`🎵 Speech MP3 at ${speechPath}: exists=${fileInfo.exists}, size=${fileInfo.size}`);
+          
+          if (fileInfo.exists && fileInfo.size > 0) {
+            results.push(`✅ Found speech MP3: ${speechPath} (${fileInfo.size} bytes)`);
+            
+            // Try to upload this MP3 with FileSystem.uploadAsync
+            console.log('🚀 Test 3: Uploading speech MP3');
+            const uploadResponse = await FileSystem.uploadAsync(
+              'https://api.openai.com/v1/audio/transcriptions',
+              speechPath,
+              {
+                httpMethod: 'POST',
+                uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+                fieldName: 'file',
+                headers: {
+                  'Authorization': `Bearer ${this.apiKey}`,
+                },
+                parameters: {
+                  model: 'whisper-1',
+                  response_format: 'text',
+                },
+              }
+            );
+            
+            console.log('📡 Speech MP3 upload status:', uploadResponse.status);
+            console.log('📡 Speech MP3 upload body:', uploadResponse.body);
+            
+            if (uploadResponse.status === 200) {
+              results.push('🎉 SUCCESS! Speech MP3 transcription worked!');
+              return { success: true, text: uploadResponse.body };
+            } else {
+              results.push(`❌ Speech MP3 upload failed: ${uploadResponse.status} - ${uploadResponse.body.substring(0, 100)}`);
+            }
+            
+            // Only try the first working file
+            break;
+          } else {
+            results.push(`❌ Speech MP3 empty or missing: ${speechPath}`);
+          }
+        } catch (error) {
+          results.push(`❌ Error checking speech MP3 ${speechPath}: ${error}`);
+        }
+      }
+      
+      const finalReport = results.join('\n');
+      console.log('🔬 MP3 ACCESS TEST RESULTS:\n', finalReport);
       
       return { 
         success: false, 
-        error: `All tests failed.\nTest 1 (M4A): ${errorText1}\nTest 2 (MP3): ${errorText2}\nTest 3 (Generic): ${errorText3}` 
+        error: `MP3 not found or upload failed:\n${finalReport}`
       };
       
     } catch (error) {
-      return { success: false, error: `Raw test error: ${error}` };
+      return { success: false, error: `MP3 test error: ${error}` };
     }
+  }
+
+  async testTenHypotheses(audioUri: string): Promise<TranscriptionResult> {
+    // Redirect to MP3 access test
+    return this.testMp3Access();
+  }
+
+  async testRawUpload(audioUri: string): Promise<TranscriptionResult> {
+    // Redirect to new systematic testing
+    return this.testTenHypotheses(audioUri);
   }
 
   async debugRecordedFile(audioUri: string): Promise<string> {
@@ -181,18 +174,12 @@ export class TranscriptionService {
     try {
       console.log('🎤 Starting transcription for audio:', audioUri);
       
-      // Debug the file first
-      const debugInfo = await this.debugRecordedFile(audioUri);
-      console.log('🔍 Debug result:', debugInfo);
-      
       // First, let's debug what we're actually working with
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       console.log('📁 File info:', {
         exists: fileInfo.exists,
         size: fileInfo.size,
         uri: audioUri,
-        isBlob: audioUri.startsWith('blob:'),
-        isFile: audioUri.startsWith('file:')
       });
 
       if (!fileInfo.exists) {
@@ -203,125 +190,53 @@ export class TranscriptionService {
         throw new Error('Audio file is empty');
       }
 
-      // Convert the audio URI to actual file data
-      let audioBlob: Blob;
+      console.log('🚀 Using FileSystem.uploadAsync with expo-audio files');
       
-      if (audioUri.startsWith('blob:')) {
-        // Handle blob URLs (web)
-        console.log('🌐 Handling blob URL');
-        const response = await fetch(audioUri);
-        audioBlob = await response.blob();
-        console.log('📦 Blob info:', { type: audioBlob.type, size: audioBlob.size });
-      } else {
-        // Handle file URIs (mobile) - use simple FormData approach
-        console.log('📱 Handling file URI - using direct file approach');
-        
-        // Detect MIME type based on actual file content, not extension
-        const base64Header = await FileSystem.readAsStringAsync(audioUri, {
-          encoding: FileSystem.EncodingType.Base64,
-          length: 50,
-          position: 0,
-        });
-        
-        const binaryData = atob(base64Header);
-        const hexHeader = Array.from(binaryData)
-          .map(byte => byte.charCodeAt(0).toString(16).padStart(2, '0'))
-          .join(' ');
-        
-        let mimeType = 'audio/wav'; // Default
-        let fileName = 'audio.wav';
-        
-        // Detect actual file format by header signature
-        if (hexHeader.includes('66 74 79 70')) { // 'ftyp' - M4A/MP4
-          mimeType = 'audio/m4a';
-          fileName = 'audio.m4a';
-          console.log('🔍 Detected M4A file (despite .wav extension)');
-        } else if (hexHeader.startsWith('52 49 46 46') && hexHeader.includes('57 41 56 45')) { // RIFF + WAVE
-          mimeType = 'audio/wav';
-          fileName = 'audio.wav';
-          console.log('🔍 Detected real WAV file');
-        } else if (hexHeader.startsWith('ff fb') || hexHeader.startsWith('ff f3') || hexHeader.startsWith('ff f2')) { // MP3
-          mimeType = 'audio/mpeg';
-          fileName = 'audio.mp3';
-          console.log('🔍 Detected MP3 file');
-        }
-        
-        console.log('🎵 Using MIME type:', mimeType, 'filename:', fileName);
-        
-        // For React Native, we can use the URI directly in FormData
-        const formData = new FormData();
-        formData.append('file', {
-          uri: audioUri,
-          type: mimeType,
-          name: fileName,
-        } as any);
-        formData.append('model', 'whisper-1');
-        formData.append('response_format', 'text');
-
-        console.log('🚀 Sending to OpenAI API with direct URI...');
-        
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
+      // Determine MIME type based on file extension
+      let mimeType = 'audio/wav'; // Default
+      if (audioUri.includes('.mp3')) {
+        mimeType = 'audio/mpeg';
+        console.log('📱 Detected MP3 file from expo-audio');
+      } else if (audioUri.includes('.wav')) {
+        mimeType = 'audio/wav';
+        console.log('📱 Detected WAV file from expo-audio');
+      }
+      
+      // Upload the file with proper MIME type
+      const uploadResponse = await FileSystem.uploadAsync(
+        'https://api.openai.com/v1/audio/transcriptions',
+        audioUri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          fieldName: 'file',
+          mimeType: mimeType,
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
           },
-          body: formData,
-        });
-
-        console.log('📡 API Response status:', response.status);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Transcription API error:', response.status, errorText);
-          return {
-            success: false,
-            error: `API Error: ${response.status} - ${errorText}`,
-          };
+          parameters: {
+            model: 'whisper-1',
+            response_format: 'text',
+          },
         }
-
-        const transcriptionText = await response.text();
-        console.log('✅ Transcription successful:', transcriptionText.substring(0, 100));
-
+      );
+      
+      console.log('📡 Upload response status:', uploadResponse.status);
+      
+      if (uploadResponse.status === 200) {
+        console.log('✅ Transcription successful with expo-audio!');
         return {
           success: true,
-          text: transcriptionText.trim(),
+          text: uploadResponse.body.trim(),
         };
-      }
-
-      // For blob URLs (web), create FormData with blob
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.wav');
-      formData.append('model', 'whisper-1');
-      formData.append('response_format', 'text');
-
-      console.log('🚀 Sending blob to OpenAI API...');
-      
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: formData,
-      });
-
-      console.log('📡 API Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Transcription API error:', response.status, errorText);
+      } else {
+        console.error('❌ Upload failed:', uploadResponse.status, uploadResponse.body);
         return {
           success: false,
-          error: `API Error: ${response.status} - ${errorText}`,
+          error: `Upload failed: ${uploadResponse.status} - ${uploadResponse.body}`,
         };
       }
-
-      const transcriptionText = await response.text();
-      console.log('✅ Transcription successful:', transcriptionText.substring(0, 100));
-
-      return {
-        success: true,
-        text: transcriptionText.trim(),
-      };
+      
     } catch (error) {
       console.error('❌ Transcription error:', error);
       return {
