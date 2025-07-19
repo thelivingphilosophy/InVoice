@@ -138,6 +138,8 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
         return '#22c55e';
       case 'in-progress':
         return '#f59e0b';
+      case 'pending_transcription':
+        return '#0a7ea4';
       default:
         return '#6b7280';
     }
@@ -149,6 +151,8 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
         return 'checkmark.circle.fill';
       case 'in-progress':
         return 'clock.fill';
+      case 'pending_transcription':
+        return 'arrow.clockwise.circle.fill';
       default:
         return 'circle.fill';
     }

@@ -9,7 +9,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import { useAudioRecording } from '@/hooks/useAudioRecording';
+import { useOfflineAudioRecording } from '@/hooks/useOfflineAudioRecording';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { TranscriptionService } from '@/services/transcription';
 import { JobStorageService } from '@/services/jobStorage';
 import { AudioQuestionService } from '@/services/audioQuestions';
@@ -36,6 +37,7 @@ export default function MinimalJobWorkflow({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { voiceTone } = useSettings();
+  const { isOffline } = useNetwork();
   
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [state, setState] = useState<State>('ready');
@@ -49,7 +51,108 @@ export default function MinimalJobWorkflow({
   const storageService = new JobStorageService();
   const audioQuestionServiceRef = useRef(new AudioQuestionService());
   const audioQuestionService = audioQuestionServiceRef.current;
-  const { startRecording, stopRecording, formatDuration, state: recordingState } = useAudioRecording();
+  
+  // Track offline recordings for the entire workflow
+  const [offlineRecordings, setOfflineRecordings] = useState<string[]>([]);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  
+  const { 
+    startRecording, 
+    stopRecording, 
+    formatDuration, 
+    state: recordingState 
+  } = useOfflineAudioRecording({
+    apiKey: openAiApiKey,
+    onTranscriptionComplete: (transcription, isFromOfflineQueue) => {
+      if (!isFromOfflineQueue) {
+        // Handle immediate transcription
+        handleTranscriptionResult(transcription);
+      }
+    },
+    onOfflineQueued: (queueId) => {
+      // Store offline recording ID for later processing
+      setOfflineRecordings(prev => [...prev, queueId]);
+      
+      // Continue to next step automatically in offline mode
+      handleOfflineStep();
+    },
+    jobType: 'workflow_step',
+    stepIndex: currentStepIndex,
+    metadata: { 
+      workflowId: Date.now().toString(),
+      jobId: currentJobId || 'temp_job_' + Date.now() // Ensure we always have some ID
+    }
+  });
+
+  const handleTranscriptionResult = (transcription: string) => {
+    if (transcription.trim()) {
+      // Save answer
+      const newAnswers = [...answers];
+      newAnswers[currentStepIndex] = transcription.trim();
+      setAnswers(newAnswers);
+      
+      // Move to next step
+      const nextIndex = currentStepIndex + 1;
+      
+      if (nextIndex >= DEFAULT_JOB_STEPS.length) {
+        // Move to completion view
+        setTimeout(() => {
+          setCurrentStepIndex(DEFAULT_JOB_STEPS.length);
+          setState('review');
+        }, 1000);
+      } else {
+        // Next question
+        setCurrentStepIndex(nextIndex);
+        setTimeout(() => speakQuestion(nextIndex), 1500);
+      }
+    }
+  };
+
+  const handleOfflineStep = () => {
+    // Mark this step as having an offline recording
+    const newAnswers = [...answers];
+    newAnswers[currentStepIndex] = `[Offline Recording - Will be processed when online]`;
+    setAnswers(newAnswers);
+    
+    // Continue to next step
+    const nextIndex = currentStepIndex + 1;
+    
+    if (nextIndex >= DEFAULT_JOB_STEPS.length) {
+      // Move to completion view
+      setTimeout(() => {
+        setCurrentStepIndex(DEFAULT_JOB_STEPS.length);
+        setState('review');
+      }, 1000);
+    } else {
+      // Next question
+      setCurrentStepIndex(nextIndex);
+      setTimeout(() => speakQuestion(nextIndex), 1500);
+    }
+    setState('ready');
+  };
+
+  const saveWorkflowProgress = async () => {
+    try {
+      // Save current workflow state
+      const workflowData = {
+        id: Date.now().toString(),
+        currentStepIndex,
+        answers,
+        timestamp: new Date().toISOString(),
+        isOffline: true,
+      };
+      
+      // Save progress and return to home
+      Alert.alert(
+        'Progress Saved',
+        'Your workflow progress has been saved. You can resume when back online.',
+        [{ text: 'OK', onPress: onCancel }]
+      );
+    } catch (error) {
+      console.error('Failed to save workflow progress:', error);
+      Alert.alert('Error', 'Failed to save progress');
+    }
+  };
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -298,39 +401,10 @@ export default function MinimalJobWorkflow({
       return;
     }
 
-    try {
-      const result = await transcriptionService.transcribeAudio(audioUri);
-      
-      if (result.success && result.text.trim()) {
-        // Save answer
-        const newAnswers = [...answers];
-        newAnswers[currentStepIndex] = result.text.trim();
-        setAnswers(newAnswers);
-        
-        // Move to next step
-        const nextIndex = currentStepIndex + 1;
-        
-        if (nextIndex >= DEFAULT_JOB_STEPS.length) {
-          // Move to completion view with a delay to let processing finish
-          setTimeout(() => {
-            setCurrentStepIndex(DEFAULT_JOB_STEPS.length); // Set to completion state
-            setState('review');
-          }, 1000); // 1 second delay to let processing UI finish
-        } else {
-          // Next question
-          setCurrentStepIndex(nextIndex);
-          // Wait a bit longer to ensure UI has updated and previous operations are complete
-          setTimeout(() => speakQuestion(nextIndex), 1500);
-        }
-      } else {
-        Alert.alert('Transcription Failed', result.error || 'Could not transcribe audio');
-        setState('ready');
-      }
-    } catch (error) {
-      console.error('Transcription error:', error);
-      Alert.alert('Error', 'Failed to transcribe audio');
-      setState('ready');
-    }
+    // The useOfflineAudioRecording hook handles transcription or queuing automatically
+    // If online, handleTranscriptionResult will be called
+    // If offline, onOfflineQueued will be called
+    setState('ready');
   };
 
   const completeWorkflow = async (finalAnswers: string[]) => {
@@ -545,6 +619,16 @@ export default function MinimalJobWorkflow({
         </TouchableOpacity>
       </View>
 
+      {/* Offline Indicator */}
+      {isOffline && (
+        <View style={[styles.offlineIndicator, { backgroundColor: '#ff9500' }]}>
+          <IconSymbol name="wifi.slash" size={16} color="white" />
+          <Text style={styles.offlineText}>
+            Offline Mode - Recordings will be saved for later processing
+          </Text>
+        </View>
+      )}
+
       {/* Progress */}
       <View style={styles.progressContainer}>
         <View style={[styles.progressBar, { backgroundColor: colors.text + '20' }]}>
@@ -609,28 +693,56 @@ export default function MinimalJobWorkflow({
             style={[styles.mainButton, { backgroundColor: '#10b981' }]}
             onPress={async () => {
               const now = new Date();
+              const hasOfflineRecordings = offlineRecordings.length > 0;
+              
+              const jobId = currentJobId || Date.now().toString();
+              
+              // Create a meaningful customer name for offline jobs
+              const getCustomerName = () => {
+                if (answers[0] && answers[0] !== 'Pending Transcription' && !answers[0].includes('[Offline Recording')) {
+                  return answers[0];
+                }
+                // For offline jobs, create a name based on creation timestamp
+                const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return hasOfflineRecordings ? `Offline Job - ${timestamp}` : 'Pending Transcription';
+              };
+              
               const jobData: JobData = {
-                id: Date.now().toString(),
-                customer: answers[0] || '',
-                jobType: answers[1] || '',
-                equipment: answers[2] || '',
-                cost: answers[3] || '',
-                additionalNotes: answers[4] || '',
+                id: jobId,
+                customer: getCustomerName(),
+                jobType: answers[1] || 'Pending Transcription',
+                equipment: answers[2] || 'Pending Transcription',
+                cost: answers[3] || 'Pending Transcription',
+                additionalNotes: hasOfflineRecordings 
+                  ? `Job completed offline. ${offlineRecordings.length} recordings will be processed when back online.\n\nRecording IDs: ${offlineRecordings.join(', ')}`
+                  : (answers[4] || ''),
                 dateCreated: now.toISOString(),
                 dateCompleted: now.toISOString(),
-                status: 'completed',
+                status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
                 totalSteps: DEFAULT_JOB_STEPS.length,
                 completedSteps: DEFAULT_JOB_STEPS.length,
               };
               
+              // Set the job ID for future offline recordings
+              if (!currentJobId) {
+                setCurrentJobId(jobId);
+              }
+              
               await storageService.saveJob(jobData);
-              Alert.alert('Success', 'Job saved successfully!', [
+              
+              const successMessage = hasOfflineRecordings
+                ? `Job saved! ${offlineRecordings.length} recordings will be transcribed when you're back online.`
+                : 'Job saved successfully!';
+              
+              Alert.alert('Success', successMessage, [
                 { text: 'OK', onPress: () => onComplete(jobData) }
               ]);
             }}
           >
             <IconSymbol name="checkmark.circle" size={48} color="white" />
-            <Text style={styles.buttonText}>Save Job</Text>
+            <Text style={styles.buttonText}>
+              {offlineRecordings.length > 0 ? 'Save Offline Job' : 'Save Job'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -713,6 +825,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  offlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 15,
+    gap: 6,
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    flex: 1,
   },
   progressContainer: {
     marginBottom: 30,

@@ -10,6 +10,9 @@ import JobExportScreen from '@/components/JobExportScreen';
 import AllJobsScreen from '@/components/AllJobsScreen';
 import SettingsScreen from '@/components/SettingsScreen';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import OfflineIndicator from '@/components/OfflineIndicator';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { JobStorageService } from '@/services/jobStorage';
 import { JobData, JobWorkflow } from '@/types/job';
 import { Colors } from '@/constants/Colors';
@@ -20,6 +23,7 @@ type ViewMode = 'home' | 'recorder' | 'job-form' | 'workflow' | 'summary' | 'exp
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { isOffline } = useNetwork();
   const [currentView, setCurrentView] = useState<ViewMode>('home');
   const [openAiApiKey, setOpenAiApiKey] = useState('');
   
@@ -32,6 +36,23 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   
   const storageService = new JobStorageService();
+
+  // Offline sync functionality
+  const { isSyncing, queueStatus, manualSync } = useOfflineSync({
+    apiKey: openAiApiKey,
+    onSyncComplete: (processedCount) => {
+      if (processedCount > 0) {
+        Alert.alert(
+          'Sync Complete',
+          `Successfully processed ${processedCount} offline recordings.`,
+          [{ text: 'OK', onPress: () => loadInitialData() }]
+        );
+      }
+    },
+    onSyncError: (error) => {
+      Alert.alert('Sync Error', `Failed to sync offline recordings: ${error}`);
+    },
+  });
 
   // Load data on component mount
   useEffect(() => {
@@ -91,8 +112,9 @@ export default function HomeScreen() {
   const handleTranscriptionComplete = async (transcription: string) => {
     // Auto-create job without popup
     try {
-      // Generate auto client name for voice recordings
-      const voiceRecordingCount = jobs.filter(job => 
+      // Get fresh job count to ensure accurate numbering
+      const allJobs = await storageService.getAllJobs();
+      const voiceRecordingCount = allJobs.filter(job => 
         job.customer?.startsWith('Voice Recording ')
       ).length;
       const nextNumber = voiceRecordingCount + 1;
@@ -465,6 +487,9 @@ export default function HomeScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.content}>
+        {/* Offline Indicator */}
+        <OfflineIndicator />
+
         {/* Header with Settings */}
         <View style={styles.homeHeader}>
           <View style={styles.headerLeft} />
@@ -516,7 +541,23 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
           
-          {/* Quick Test button removed - use the regular workflow that prompts for API key */}
+          {/* Manual Sync Button - only show when there are pending recordings */}
+          {!isOffline && queueStatus.pending > 0 && (
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#10b981', opacity: isSyncing ? 0.7 : 1 }]}
+              onPress={manualSync}
+              disabled={isSyncing}
+            >
+              {isSyncing ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <IconSymbol name="arrow.clockwise" size={32} color="white" />
+              )}
+              <Text style={styles.actionButtonText}>
+                {isSyncing ? 'Syncing...' : `Sync ${queueStatus.pending} Recordings`}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: '#FF6B35' }]}

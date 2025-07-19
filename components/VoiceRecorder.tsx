@@ -8,8 +8,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import { useAudioRecording } from '@/hooks/useAudioRecording';
-import { TranscriptionService } from '@/services/transcription';
+import { useOfflineAudioRecording } from '@/hooks/useOfflineAudioRecording';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
@@ -21,10 +21,35 @@ interface VoiceRecorderProps {
 export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }: VoiceRecorderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const [isTranscribing, setIsTranscribing] = useState(false);
+  const { isOffline } = useNetwork();
   
-  const { startRecording, stopRecording, formatDuration, state } = useAudioRecording();
-  const transcriptionService = new TranscriptionService(openAiApiKey);
+  const { 
+    startRecording, 
+    stopRecording, 
+    formatDuration, 
+    state 
+  } = useOfflineAudioRecording({
+    apiKey: openAiApiKey,
+    onTranscriptionComplete: (transcription, isFromOfflineQueue) => {
+      if (isFromOfflineQueue) {
+        Alert.alert(
+          'Offline Recording Processed', 
+          'A previously recorded audio has been transcribed and saved.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        onTranscriptionComplete(transcription);
+      }
+    },
+    onOfflineQueued: (queueId) => {
+      Alert.alert(
+        'Recording Saved Offline',
+        'Your recording has been saved and will be processed when you\'re back online.',
+        [{ text: 'OK', onPress: () => onTranscriptionComplete('') }]
+      );
+    },
+    jobType: 'voice_note'
+  });
 
   const handleStartRecording = async () => {
     try {
@@ -35,9 +60,8 @@ export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }:
     }
   };
 
-  const handleStopAndTranscribe = async () => {
+  const handleStopAndProcess = async () => {
     try {
-      setIsTranscribing(true);
       const audioUri = await stopRecording();
       
       if (!audioUri) {
@@ -45,52 +69,67 @@ export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }:
         return;
       }
 
-      const result = await transcriptionService.transcribeAudio(audioUri);
-      
-      if (result.success && result.text.trim()) {
-        onTranscriptionComplete(result.text.trim());
-      } else {
-        Alert.alert('Transcription Failed', result.error || 'Could not transcribe audio');
-      }
+      // The useOfflineAudioRecording hook handles transcription or queuing automatically
     } catch (error) {
-      console.error('Transcription error:', error);
-      Alert.alert('Error', 'Failed to transcribe audio');
-    } finally {
-      setIsTranscribing(false);
+      console.error('Processing error:', error);
+      Alert.alert('Error', 'Failed to process recording');
     }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
+        {/* Offline Status Indicator */}
+        {isOffline && (
+          <View style={[styles.offlineIndicator, { backgroundColor: '#ff9500' }]}>
+            <IconSymbol name="wifi.slash" size={20} color="white" />
+            <Text style={styles.offlineText}>
+              Offline Mode - Recordings will be saved for later processing
+            </Text>
+          </View>
+        )}
+
         <View style={styles.recordingArea}>
-          {!state.isRecording && !isTranscribing && (
+          {!state.isRecording && !state.isProcessing && (
             <TouchableOpacity
-              style={[styles.recordButton, { backgroundColor: colors.tint }]}
+              style={[styles.recordButton, { backgroundColor: isOffline ? '#ff9500' : colors.tint }]}
               onPress={handleStartRecording}
             >
               <IconSymbol name="mic" size={48} color="white" />
-              <Text style={styles.recordButtonText}>Start Recording</Text>
+              <Text style={styles.recordButtonText}>
+                {isOffline ? 'Record Offline' : 'Start Recording'}
+              </Text>
             </TouchableOpacity>
           )}
 
           {state.isRecording && (
             <TouchableOpacity
               style={[styles.recordButton, { backgroundColor: '#ff4444' }]}
-              onPress={handleStopAndTranscribe}
+              onPress={handleStopAndProcess}
             >
               <IconSymbol name="stop" size={48} color="white" />
-              <Text style={styles.recordButtonText}>Stop & Transcribe</Text>
+              <Text style={styles.recordButtonText}>
+                {isOffline ? 'Stop & Save' : 'Stop & Transcribe'}
+              </Text>
               <Text style={styles.recordingTime}>
                 {formatDuration(state.duration)}
               </Text>
             </TouchableOpacity>
           )}
 
-          {isTranscribing && (
+          {state.isProcessing && (
             <View style={[styles.recordButton, { backgroundColor: '#666' }]}>
               <ActivityIndicator size="large" color="white" />
-              <Text style={styles.recordButtonText}>Transcribing...</Text>
+              <Text style={styles.recordButtonText}>
+                {isOffline ? 'Saving...' : 'Transcribing...'}
+              </Text>
+            </View>
+          )}
+
+          {state.isOfflineQueued && (
+            <View style={[styles.recordButton, { backgroundColor: '#22c55e' }]}>
+              <IconSymbol name="checkmark.circle" size={48} color="white" />
+              <Text style={styles.recordButtonText}>Saved for Later Processing</Text>
             </View>
           )}
         </View>
@@ -108,6 +147,23 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  offlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 8,
+    width: '100%',
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    flex: 1,
   },
   recordingArea: {
     alignItems: 'center',
