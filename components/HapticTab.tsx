@@ -1,6 +1,7 @@
 import { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import * as Haptics from 'expo-haptics';
+import { DeviceEventEmitter } from 'react-native';
 
 export function HapticTab(props: BottomTabBarButtonProps) {
   return (
@@ -12,6 +13,13 @@ export function HapticTab(props: BottomTabBarButtonProps) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
         props.onPressIn?.(ev);
+      }}
+      onPress={(ev) => {
+        // Check if this is the home tab and emit event
+        if (props.accessibilityLabel === 'Home' || props.href === '/' || props.href === '') {
+          DeviceEventEmitter.emit('homeTabPressed');
+        }
+        props.onPress?.(ev);
       }}
     />
   );
