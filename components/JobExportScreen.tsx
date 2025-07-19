@@ -225,7 +225,12 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
                   />
                   <View style={styles.jobInfo}>
                     <Text style={[styles.jobCustomer, { color: colors.text }]}>
-                      {new Date(job.dateCreated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(job.dateCreated).toLocaleString([], { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
                     </Text>
                     <Text style={[styles.jobType, { color: colors.text }]}>
                       {job.customer || 'Unnamed Customer'} - {job.jobType || 'General Work'}

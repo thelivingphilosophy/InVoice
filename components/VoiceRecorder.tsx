@@ -63,10 +63,6 @@ export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }:
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Voice Recorder
-        </Text>
-        
         <View style={styles.recordingArea}>
           {!state.isRecording && !isTranscribing && (
             <TouchableOpacity
@@ -112,12 +108,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 40,
-    textAlign: 'center',
   },
   recordingArea: {
     alignItems: 'center',

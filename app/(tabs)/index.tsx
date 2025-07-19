@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, DeviceEventEmitter } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import JobDetailsForm, { JobDetails } from '@/components/JobDetailsForm';
@@ -70,12 +71,16 @@ export default function HomeScreen() {
   const loadInitialData = async () => {
     try {
       setIsLoading(true);
-      const [savedJobs, savedWorkflow] = await Promise.all([
+      const [savedJobs, savedWorkflow, savedApiKey] = await Promise.all([
         storageService.getAllJobs(),
         storageService.getActiveWorkflow(),
+        AsyncStorage.getItem('openai_api_key'),
       ]);
       setJobs(savedJobs);
       setActiveWorkflow(savedWorkflow);
+      if (savedApiKey) {
+        setOpenAiApiKey(savedApiKey);
+      }
     } catch (error) {
       console.error('Failed to load initial data:', error);
     } finally {
@@ -83,37 +88,43 @@ export default function HomeScreen() {
     }
   };
 
-  const handleTranscriptionComplete = (transcription: string) => {
-    Alert.alert(
-      'Transcription Complete',
-      'Would you like to create a job entry with this transcription?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Create Job',
-          onPress: () => {
-            // Generate auto client name for voice recordings
-            const voiceRecordingCount = jobs.filter(job => 
-              job.customer?.startsWith('Voice Recording ')
-            ).length;
-            const nextNumber = voiceRecordingCount + 1;
-            
-            setEditingJob({
-              id: '',
-              clientName: `Voice Recording ${nextNumber}`,
-              address: '',
-              jobType: '',
-              description: transcription,
-              materials: '',
-              laborHours: '',
-              notes: '',
-              dateCreated: new Date().toISOString(),
-            } as JobDetails);
-            setCurrentView('job-form');
-          }
-        }
-      ]
-    );
+  const handleTranscriptionComplete = async (transcription: string) => {
+    // Auto-create job without popup
+    try {
+      // Generate auto client name for voice recordings
+      const voiceRecordingCount = jobs.filter(job => 
+        job.customer?.startsWith('Voice Recording ')
+      ).length;
+      const nextNumber = voiceRecordingCount + 1;
+      
+      // Create job data directly
+      const now = new Date();
+      const jobData: JobData = {
+        id: Date.now().toString(),
+        customer: `Voice Recording ${nextNumber}`,
+        jobType: 'Voice Note',
+        equipment: '',
+        cost: '',
+        location: '',
+        additionalNotes: transcription,
+        dateCreated: now.toISOString(),
+        dateCompleted: now.toISOString(),
+        status: 'completed',
+        totalSteps: 1,
+        completedSteps: 1,
+      };
+
+      // Save the job automatically
+      await storageService.saveJob(jobData);
+      await loadInitialData(); // Refresh the jobs list
+      
+      // Go directly to summary view
+      setSelectedJob(jobData);
+      setCurrentView('summary');
+    } catch (error) {
+      console.error('Failed to save voice recording job:', error);
+      Alert.alert('Error', 'Failed to save voice recording');
+    }
   };
 
   const handleSaveJob = async (job: JobDetails) => {
@@ -159,8 +170,7 @@ export default function HomeScreen() {
     } catch (error) {
       console.log('No workflows to clear');
     }
-    // Clear API key to force re-entry
-    setOpenAiApiKey('');
+    // Don't clear API key - let it persist between workflows
     setCurrentView('workflow');
   };
 
@@ -224,12 +234,16 @@ export default function HomeScreen() {
       return (
         <KeyboardAvoidingView 
           style={[styles.container, { backgroundColor: colors.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+          enabled={true}
         >
           <ScrollView 
             contentContainerStyle={styles.scrollContainer}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            enableOnAndroid={true}
+            extraScrollHeight={Platform.OS === 'ios' ? 20 : 100}
           >
             <View style={styles.apiKeyContainer}>
               <Text style={[styles.title, { color: colors.text }]}>
@@ -254,7 +268,12 @@ export default function HomeScreen() {
               
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: '#0a7ea4', opacity: openAiApiKey.trim() ? 1 : 0.5 }]}
-                onPress={() => openAiApiKey.trim() && setCurrentView('recorder')}
+                onPress={async () => {
+                  if (openAiApiKey.trim()) {
+                    await AsyncStorage.setItem('openai_api_key', openAiApiKey.trim());
+                    setCurrentView('recorder');
+                  }
+                }}
                 disabled={!openAiApiKey.trim()}
               >
                 <Text style={styles.buttonText}>Continue</Text>
@@ -297,7 +316,9 @@ export default function HomeScreen() {
       return (
         <KeyboardAvoidingView 
           style={[styles.container, { backgroundColor: colors.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+          enabled={true}
         >
           <View style={styles.header}>
             <TouchableOpacity
@@ -315,6 +336,8 @@ export default function HomeScreen() {
             contentContainerStyle={styles.scrollContainer}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            enableOnAndroid={true}
+            extraScrollHeight={Platform.OS === 'ios' ? 20 : 100}
           >
             <View style={styles.apiKeyContainer}>
               <Text style={[styles.title, { color: colors.text }]}>
@@ -339,7 +362,12 @@ export default function HomeScreen() {
               
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: '#0a7ea4', opacity: openAiApiKey.trim() ? 1 : 0.5 }]}
-                onPress={() => openAiApiKey.trim() && setCurrentView('workflow')}
+                onPress={async () => {
+                  if (openAiApiKey.trim()) {
+                    await AsyncStorage.setItem('openai_api_key', openAiApiKey.trim());
+                    setCurrentView('workflow');
+                  }
+                }}
                 disabled={!openAiApiKey.trim()}
               >
                 <Text style={styles.buttonText}>Start Workflow</Text>
@@ -650,15 +678,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   apiKeyContainer: {
-    padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    width: '100%',
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingVertical: 20,
+    paddingHorizontal: 20,
   },
   apiKeyInput: {
     width: '100%',

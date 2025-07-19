@@ -525,7 +525,16 @@ export default function MinimalJobWorkflow({
       <View style={styles.header}>
         <TouchableOpacity 
           style={[styles.backButton, { backgroundColor: '#ffffff', borderColor: '#000000' }]}
-          onPress={onCancel}
+          onPress={() => {
+            Alert.alert(
+              'Leave Workflow',
+              'Progress will be lost. Do you wish to proceed?',
+              [
+                { text: 'No', style: 'cancel' },
+                { text: 'Yes', onPress: onCancel },
+              ]
+            );
+          }}
         >
           <IconSymbol name="house" size={16} color="#000000" />
           <Text style={[styles.backText, { color: '#000000' }]}>Home</Text>

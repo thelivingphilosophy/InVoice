@@ -96,27 +96,44 @@ export class AudioQuestionService {
   }
 
   private getAudioPath(questionNumber: number, tone: VoiceTone) {
-    // Since we lost the audio files, always throw error to fall back to TTS
-    // When you re-record audio files, you can uncomment the code below
-    
-    /*
-    // Map tone to folder name
-    const toneFolder = {
-      'friendly': 'friendly',
-      'professional': 'professional', 
-      'casual': 'casual',
-      'default': 'default'
-    }[tone] || 'default';
+    // Static mapping of all available audio files
+    const audioFiles: { [key: string]: any } = {
+      // Casual files
+      'casual-1': require('../assets/audio/Casual/casual-question-1.mp3'),
+      'casual-2': require('../assets/audio/Casual/casual-question-2.mp3'),
+      'casual-3': require('../assets/audio/Casual/casual-question-3.mp3'),
+      'casual-4': require('../assets/audio/Casual/casual-question-4.mp3'),
+      'casual-5': require('../assets/audio/Casual/casual-question-5.mp3'),
+      
+      // Direct files
+      'direct-1': require('../assets/audio/Direct/direct-question-1.mp3'),
+      'direct-2': require('../assets/audio/Direct/direct-question-2.mp3'),
+      'direct-3': require('../assets/audio/Direct/direct-question-3.mp3'),
+      'direct-4': require('../assets/audio/Direct/direct-question-4.mp3'),
+      'direct-5': require('../assets/audio/Direct/direct-question-5-a.mp3'),
+      
+      // Whacky files (using -a variants where available)
+      'whacky-1': require('../assets/audio/Whacky/whacky-question-1-a.mp3'),
+      'whacky-2': require('../assets/audio/Whacky/whacky-question-2.mp3'),
+      'whacky-3': require('../assets/audio/Whacky/whacky-question-3.mp3'),
+      'whacky-4': require('../assets/audio/Whacky/whacky-question-4.mp3'),
+      'whacky-5': require('../assets/audio/Whacky/whacky-question-5-a.mp3'),
+    };
 
-    try {
-      return require(`../assets/audio/${toneFolder}/question${questionNumber}.m4a`);
-    } catch (error) {
-      console.log(`Audio file not found for ${toneFolder}/question${questionNumber}.m4a, using fallback`);
+    // If default tone, use TTS
+    if (tone === 'default') {
+      throw new Error(`Audio files not available for tone: ${tone} - using TTS fallback`);
+    }
+
+    const audioKey = `${tone}-${questionNumber}`;
+    const audioPath = audioFiles[audioKey];
+    
+    if (audioPath) {
+      console.log(`🎵 Found audio file for: ${audioKey}`);
+      return audioPath;
+    } else {
+      console.log(`Audio file not found for key: ${audioKey}, using TTS fallback`);
       throw new Error(`Audio file not found for tone: ${tone}, question: ${questionNumber}`);
     }
-    */
-    
-    // For now, always fall back to TTS
-    throw new Error(`Audio files not available - using TTS fallback`);
   }
 }
