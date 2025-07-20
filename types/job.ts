@@ -1,5 +1,6 @@
 export interface JobData {
   id: string;
+  title?: string; // Display title (timestamp-based)
   customer: string;
   jobType: string;
   equipment: string;

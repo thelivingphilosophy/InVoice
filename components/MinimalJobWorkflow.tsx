@@ -79,8 +79,8 @@ export default function MinimalJobWorkflow({
     jobType: 'workflow_step',
     stepIndex: currentStepIndex,
     metadata: { 
-      workflowId: Date.now().toString(),
-      jobId: currentJobId || 'temp_job_' + Date.now() // Ensure we always have some ID
+      workflowId: currentJobId,
+      jobId: currentJobId
     }
   });
 
@@ -156,6 +156,43 @@ export default function MinimalJobWorkflow({
 
   useEffect(() => {
     isMountedRef.current = true;
+    
+    // Set a consistent job ID for the entire workflow at the start
+    if (!currentJobId) {
+      const workflowJobId = Date.now().toString();
+      setCurrentJobId(workflowJobId);
+      console.log(`🆔 Set workflow job ID: ${workflowJobId}`);
+      
+      // Create the initial job record immediately so offline recordings can reference it
+      const createInitialJob = async () => {
+        try {
+          const now = new Date();
+          const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          
+          const initialJob = {
+            id: workflowJobId,
+            title: timestamp, // Use title for display
+            customer: 'Question Skipped',
+            jobType: 'Question Skipped',
+            equipment: 'Question Skipped',
+            cost: 'Question Skipped',
+            additionalNotes: '',
+            dateCreated: now.toISOString(),
+            dateCompleted: '',
+            status: 'in-progress' as const,
+            totalSteps: DEFAULT_JOB_STEPS.length,
+            completedSteps: 0,
+          };
+          
+          await storageService.saveJob(initialJob);
+          console.log(`💾 Created initial job record: ${workflowJobId}`);
+        } catch (error) {
+          console.error('Failed to create initial job:', error);
+        }
+      };
+      
+      createInitialJob();
+    }
     
     // Initialize TTS
     const initializeTts = async () => {
@@ -269,6 +306,7 @@ export default function MinimalJobWorkflow({
       // First try to play recorded audio if not using default
       if (voiceTone !== 'default') {
         try {
+          console.log(`🗣️ DEBUG: Attempting to play audio for tone: ${voiceTone}, question: ${questionNumber}`);
           await audioQuestionService.playQuestion(questionNumber, voiceTone);
           
           // Set a timer to change state to ready after a reasonable time
@@ -283,7 +321,7 @@ export default function MinimalJobWorkflow({
           
           return;
         } catch (audioError) {
-          console.log('Audio playback failed, falling back to TTS:', audioError);
+          console.log('🗣️ DEBUG: Audio playback failed, falling back to TTS:', audioError);
         }
       }
 
@@ -598,25 +636,43 @@ export default function MinimalJobWorkflow({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
-          style={[styles.backButton, { backgroundColor: '#ffffff', borderColor: '#000000' }]}
+          style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]}
           onPress={() => {
             Alert.alert(
               'Leave Workflow',
               'Progress will be lost. Do you wish to proceed?',
               [
                 { text: 'No', style: 'cancel' },
-                { text: 'Yes', onPress: onCancel },
+                { 
+                  text: 'Yes', 
+                  onPress: async () => {
+                    // Delete the job that was created for this workflow
+                    if (currentJobId) {
+                      try {
+                        await storageService.deleteJob(currentJobId);
+                        console.log(`🗑️ Deleted abandoned workflow job: ${currentJobId}`);
+                      } catch (error) {
+                        console.error('Failed to delete abandoned job:', error);
+                      }
+                    }
+                    onCancel();
+                  }
+                },
               ]
             );
           }}
         >
-          <IconSymbol name="house" size={16} color="#000000" />
-          <Text style={[styles.backText, { color: '#000000' }]}>Home</Text>
+          <IconSymbol name="house" size={16} color="white" />
+          <Text style={[styles.backText, { color: 'white' }]}>Home</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Job Entry</Text>
-        <TouchableOpacity onPress={repeatQuestion}>
-          <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
-        </TouchableOpacity>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>Job Entry</Text>
+        </View>
+        <View style={styles.rightSection}>
+          <TouchableOpacity onPress={repeatQuestion}>
+            <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Offline Indicator */}
@@ -695,47 +751,54 @@ export default function MinimalJobWorkflow({
               const now = new Date();
               const hasOfflineRecordings = offlineRecordings.length > 0;
               
-              const jobId = currentJobId || Date.now().toString();
+              // Use the existing job ID
+              const jobId = currentJobId!;
               
-              // Create a meaningful customer name for offline jobs
-              const getCustomerName = () => {
-                if (answers[0] && answers[0] !== 'Pending Transcription' && !answers[0].includes('[Offline Recording')) {
-                  return answers[0];
-                }
-                // For offline jobs, create a name based on creation timestamp
+              // Update the existing job with final data
+              const existingJob = await storageService.getJobById(jobId);
+              if (existingJob) {
+                const updatedJob = {
+                  ...existingJob,
+                  customer: answers[0] || existingJob.customer,
+                  jobType: answers[1] || existingJob.jobType,
+                  equipment: answers[2] || existingJob.equipment,
+                  cost: answers[3] || existingJob.cost,
+                  additionalNotes: answers[4] || existingJob.additionalNotes,
+                  dateCompleted: now.toISOString(),
+                  status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
+                  completedSteps: DEFAULT_JOB_STEPS.length,
+                };
+                
+                await storageService.saveJob(updatedJob);
+                console.log(`💾 Updated existing job: ${jobId}`);
+              } else {
+                console.error(`❌ Could not find existing job: ${jobId}`);
+                // Fallback to creating new job
                 const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                return hasOfflineRecordings ? `Offline Job - ${timestamp}` : 'Pending Transcription';
-              };
-              
-              const jobData: JobData = {
-                id: jobId,
-                customer: getCustomerName(),
-                jobType: answers[1] || 'Pending Transcription',
-                equipment: answers[2] || 'Pending Transcription',
-                cost: answers[3] || 'Pending Transcription',
-                additionalNotes: hasOfflineRecordings 
-                  ? `Job completed offline. ${offlineRecordings.length} recordings will be processed when back online.\n\nRecording IDs: ${offlineRecordings.join(', ')}`
-                  : (answers[4] || ''),
-                dateCreated: now.toISOString(),
-                dateCompleted: now.toISOString(),
-                status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
-                totalSteps: DEFAULT_JOB_STEPS.length,
-                completedSteps: DEFAULT_JOB_STEPS.length,
-              };
-              
-              // Set the job ID for future offline recordings
-              if (!currentJobId) {
-                setCurrentJobId(jobId);
+                const jobData: JobData = {
+                  id: jobId,
+                  title: timestamp,
+                  customer: answers[0] || 'Pending Transcription',
+                  jobType: answers[1] || 'Pending Transcription',
+                  equipment: answers[2] || 'Pending Transcription',
+                  cost: answers[3] || 'Pending Transcription',
+                  additionalNotes: answers[4] || '',
+                  dateCreated: now.toISOString(),
+                  dateCompleted: now.toISOString(),
+                  status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
+                  totalSteps: DEFAULT_JOB_STEPS.length,
+                  completedSteps: DEFAULT_JOB_STEPS.length,
+                };
+                await storageService.saveJob(jobData);
               }
               
-              await storageService.saveJob(jobData);
-              
               const successMessage = hasOfflineRecordings
-                ? `Job saved! ${offlineRecordings.length} recordings will be transcribed when you're back online.`
+                ? `Job saved! Recordings will be transcribed when you're back online.`
                 : 'Job saved successfully!';
               
+              const finalJob = await storageService.getJobById(jobId);
               Alert.alert('Success', successMessage, [
-                { text: 'OK', onPress: () => onComplete(jobData) }
+                { text: 'OK', onPress: () => onComplete(finalJob!) }
               ]);
             }}
           >
@@ -749,9 +812,11 @@ export default function MinimalJobWorkflow({
 
       {/* Previous Answers */}
       <ScrollView style={styles.answersContainer} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.answersTitle, { color: colors.text }]}>
-          {state === 'review' ? 'Review Your Answers:' : 'Progress:'}
-        </Text>
+        {(currentStepIndex > 0 || state === 'review') && (
+          <Text style={[styles.answersTitle, { color: colors.text }]}>
+            {state === 'review' ? 'Review Your Answers:' : 'Job Details:'}
+          </Text>
+        )}
         {(state === 'review' ? DEFAULT_JOB_STEPS : DEFAULT_JOB_STEPS.slice(0, currentStepIndex)).map((step, index) => (
           <View key={index} style={[styles.answerItem, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
             <Text style={[styles.answerLabel, { color: colors.text }]}>
@@ -780,14 +845,10 @@ export default function MinimalJobWorkflow({
         
         {state !== 'review' && (
           <TouchableOpacity
-            style={[styles.actionButton, { 
-              backgroundColor: currentStepIndex === DEFAULT_JOB_STEPS.length - 1 ? '#10b981' : '#666' 
-            }]}
+            style={[styles.actionButton, { backgroundColor: '#12273a' }]}
             onPress={skipStep}
           >
-            <Text style={styles.actionButtonText}>
-              {currentStepIndex === DEFAULT_JOB_STEPS.length - 1 ? 'Save Job' : 'Skip This Step'}
-            </Text>
+            <Text style={styles.actionButtonText}>Skip This Step</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -822,9 +883,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  titleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  rightSection: {
+    width: 70, // Match the minWidth of backButton
+    alignItems: 'flex-end',
+  },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   offlineIndicator: {
     flexDirection: 'row',
@@ -865,7 +935,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#0a7ea4' + '10',
     borderWidth: 2,
-    borderColor: '#0a7ea4',
+    borderColor: '#e67e22',
   },
   questionText: {
     fontSize: 18,

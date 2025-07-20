@@ -34,19 +34,20 @@ export default function OfflineIndicator() {
     }
   };
 
+  const getStatusColor = () => {
+    if (isOffline) return colors.warning; // Amber for offline
+    if (queueStatus.pending > 0) return colors.success; // Green when back online with pending items
+    return null; // No indicator when online with no pending items
+  };
+
   // Don't show indicator if online and no pending items
-  if (!isOffline && queueStatus.pending === 0) {
+  const statusColor = getStatusColor();
+  if (!statusColor) {
     return null;
   }
 
   const handlePress = () => {
     setIsExpanded(!isExpanded);
-  };
-
-  const getStatusColor = () => {
-    if (isOffline) return '#ff9500'; // Orange for offline
-    if (queueStatus.pending > 0) return '#0a7ea4'; // Blue for syncing
-    return '#22c55e'; // Green for completed
   };
 
   const getStatusText = () => {
@@ -128,7 +129,7 @@ export default function OfflineIndicator() {
 
   return (
     <TouchableOpacity 
-      style={[styles.container, { backgroundColor: getStatusColor() }]}
+      style={[styles.container, { backgroundColor: statusColor }]}
       onPress={handlePress}
       activeOpacity={0.8}
     >
@@ -189,21 +190,27 @@ export default function OfflineIndicator() {
 
 const styles = StyleSheet.create({
   container: {
-    margin: 16,
-    borderRadius: 8,
+    alignSelf: 'center',
+    borderRadius: 15,
     overflow: 'hidden',
+    marginTop: 15,
+    marginBottom: 20,
+    maxWidth: 200, // Prevent it from getting too wide
+    minWidth: 150, // Prevent it from getting too small
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
   },
   statusText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     flex: 1,
+    textAlign: 'center',
   },
   details: {
     padding: 12,
@@ -225,7 +232,7 @@ const styles = StyleSheet.create({
   syncButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'transparent',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,

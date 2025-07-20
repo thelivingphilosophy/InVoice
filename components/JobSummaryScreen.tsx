@@ -163,19 +163,26 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
       {/* Header */}
       <View style={[styles.header, { paddingTop: 60 }]}>
         <TouchableOpacity 
-          style={[styles.closeButton, { backgroundColor: '#ffffff', borderColor: '#000000' }]} 
+          style={[styles.closeButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]} 
           onPress={onClose}
         >
-          <IconSymbol name="house" size={16} color="#000000" />
-          <Text style={[styles.backText, { color: '#000000' }]}>Home</Text>
+          <IconSymbol name="house" size={16} color="white" />
+          <Text style={[styles.backText, { color: 'white' }]}>Home</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Job Summary</Text>
-        <TouchableOpacity 
-          style={[styles.editButton, { backgroundColor: '#000000', borderColor: '#000000' }]} 
-          onPress={onEdit}
-        >
-          <IconSymbol name="pencil" size={16} color="#ffffff" />
-        </TouchableOpacity>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>
+            {job.jobType === 'Voice Note' ? 'Recording Summary' : 'Job Summary'}
+          </Text>
+          <View style={styles.titleUnderline} />
+        </View>
+        <View style={styles.rightSection}>
+          <TouchableOpacity 
+            style={[styles.editButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]} 
+            onPress={onEdit}
+          >
+            <IconSymbol name="pencil" size={16} color="white" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Status Badge */}
@@ -201,88 +208,116 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
 
       {/* Job Details */}
       <View style={styles.detailsContainer}>
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Customer Information
-          </Text>
-          <Text style={[styles.detailText, { color: colors.text }]}>
-            {job.customer || 'Not specified'}
-          </Text>
-        </View>
+        {job.jobType === 'Voice Note' ? (
+          // Simplified view for voice recordings
+          <>
+            <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Type
+              </Text>
+              <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                Voice Recording
+              </Text>
+            </View>
 
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Job Type
-          </Text>
-          <Text style={[styles.detailText, { color: colors.text }]}>
-            {job.jobType || 'Not specified'}
-          </Text>
-        </View>
+            {job.additionalNotes && (
+              <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Transcription
+                </Text>
+                <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                  {job.additionalNotes}
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          // Full view for workflow jobs
+          <>
+            <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Customer Information
+              </Text>
+              <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                {job.customer || 'Not specified'}
+              </Text>
+            </View>
 
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Equipment & Materials
-          </Text>
-          <Text style={[styles.detailText, { color: colors.text }]}>
-            {job.equipment || 'Not specified'}
-          </Text>
-        </View>
+            <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Job Type
+              </Text>
+              <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                {job.jobType || 'Not specified'}
+              </Text>
+            </View>
 
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Cost
-          </Text>
-          <Text style={[styles.detailText, { color: colors.text }]}>
-            {job.cost || 'Not specified'}
-          </Text>
-        </View>
+            <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Equipment & Materials
+              </Text>
+              <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                {job.equipment || 'Not specified'}
+              </Text>
+            </View>
 
-        {job.location && (
-          <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Location
-            </Text>
-            <Text style={[styles.detailText, { color: colors.text }]}>
-              {job.location}
-            </Text>
-          </View>
-        )}
+            <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Cost
+              </Text>
+              <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                {job.cost || 'Not specified'}
+              </Text>
+            </View>
 
-        {job.additionalNotes && (
-          <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Additional Notes
-            </Text>
-            <Text style={[styles.detailText, { color: colors.text }]}>
-              {job.additionalNotes}
-            </Text>
-          </View>
+            {job.location && (
+              <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Location
+                </Text>
+                <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                  {job.location}
+                </Text>
+              </View>
+            )}
+
+            {job.additionalNotes && (
+              <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Additional Notes
+                </Text>
+                <Text style={[styles.detailText, { color: '#ffffff' }]}>
+                  {job.additionalNotes}
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* Dates */}
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+          <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
             Date Created
           </Text>
-          <Text style={[styles.detailText, { color: colors.text }]}>
+          <Text style={[styles.detailText, { color: '#ffffff' }]}>
             {formatDate(job.dateCreated)}
           </Text>
         </View>
 
         {job.dateCompleted && (
-          <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+            <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
               Date Completed
             </Text>
-            <Text style={[styles.detailText, { color: colors.text }]}>
+            <Text style={[styles.detailText, { color: '#ffffff' }]}>
               {formatDate(job.dateCompleted)}
             </Text>
           </View>
         )}
 
         {/* Progress */}
-        <View style={[styles.detailSection, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <View style={[styles.detailSection, { backgroundColor: '#12273a', borderColor: colors.text + '20' }]}>
+          <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
             Progress
           </Text>
           <View style={styles.progressContainer}>
@@ -297,7 +332,7 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
                 ]}
               />
             </View>
-            <Text style={[styles.progressText, { color: colors.text }]}>
+            <Text style={[styles.progressText, { color: '#ffffff' }]}>
               {job.completedSteps} of {job.totalSteps} steps completed
             </Text>
           </View>
@@ -308,7 +343,7 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
       <View style={styles.actionButtons}>
         {onStartNewJob && (
           <TouchableOpacity
-            style={[styles.actionButton, styles.newJobButton, { backgroundColor: '#10b981' }]}
+            style={[styles.actionButton, styles.newJobButton, { backgroundColor: '#f89448' }]}
             onPress={onStartNewJob}
           >
             <IconSymbol name="plus.circle" size={20} color="white" />
@@ -317,7 +352,7 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
         )}
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.emailButton, { backgroundColor: '#0a7ea4' }]}
+          style={[styles.actionButton, styles.emailButton, { backgroundColor: '#f89448' }]}
           onPress={handleEmailSummary}
         >
           <IconSymbol name="envelope" size={20} color="white" />
@@ -327,7 +362,7 @@ export default function JobSummaryScreen({ job, onClose, onEdit, onStartNewJob }
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.shareButton, { backgroundColor: '#34d399' }]}
+          style={[styles.actionButton, styles.shareButton, { backgroundColor: '#f89448' }]}
           onPress={handleShareSummary}
         >
           <IconSymbol name="square.and.arrow.up" size={20} color="white" />
@@ -372,9 +407,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  titleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rightSection: {
+    width: 70, // Match the minWidth of closeButton
+    alignItems: 'flex-end',
+  },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#f89448',
+    marginTop: 8,
   },
   editButton: {
     width: 40,

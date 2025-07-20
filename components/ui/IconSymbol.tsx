@@ -40,6 +40,8 @@ const MAPPING = {
   'list.bullet': 'list',
   'waveform': 'graphic-eq',
   'mic.slash': 'mic-off',
+  'square': 'check-box-outline-blank',
+  'checkmark.square': 'check-box',
 } as IconMapping;
 
 /**

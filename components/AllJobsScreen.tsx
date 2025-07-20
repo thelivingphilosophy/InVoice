@@ -83,13 +83,19 @@ export default function AllJobsScreen({ onClose, onJobSelect }: AllJobsScreenPro
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onClose}>
-          <IconSymbol name="chevron.left" size={24} color={colors.text} />
-          <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
+      <View style={[styles.header, { paddingTop: 60 }]}>
+        <TouchableOpacity 
+          style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]} 
+          onPress={onClose}
+        >
+          <IconSymbol name="chevron.left" size={16} color="white" />
+          <Text style={[styles.backText, { color: 'white' }]}>Back</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>All Jobs</Text>
-        <View style={{ width: 60 }} />
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>All Jobs</Text>
+          <View style={styles.titleUnderline} />
+        </View>
+        <View style={styles.rightSection} />
       </View>
 
       {jobs.length === 0 ? (
@@ -119,7 +125,7 @@ export default function AllJobsScreen({ onClose, onJobSelect }: AllJobsScreenPro
                 >
                   <View style={styles.jobHeader}>
                     <Text style={[styles.jobCustomer, { color: colors.text }]}>
-                      {job.customer || 'Unnamed Customer'}
+                      {job.title || job.customer || 'Unnamed Job'}
                     </Text>
                     <View style={[styles.statusBadge, { 
                       backgroundColor: job.status === 'completed' ? '#22c55e20' : '#f59e0b20' 
@@ -133,7 +139,7 @@ export default function AllJobsScreen({ onClose, onJobSelect }: AllJobsScreenPro
                   </View>
                   
                   <Text style={[styles.jobType, { color: colors.text }]}>
-                    {job.jobType || 'General Work'}
+                    {job.jobType === 'Voice Note' ? job.jobType : (job.customer || 'General Work')}
                   </Text>
                   
                   {job.location && (
@@ -177,7 +183,7 @@ export default function AllJobsScreen({ onClose, onJobSelect }: AllJobsScreenPro
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
+    padding: 20,
   },
   centered: {
     justifyContent: 'center',
@@ -188,16 +194,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    paddingTop: 10,
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    minWidth: 70,
   },
   backText: {
-    fontSize: 16,
-    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rightSection: {
+    width: 70,
+    alignItems: 'flex-end',
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#f89448',
+    marginTop: 8,
   },
   title: {
     fontSize: 24,

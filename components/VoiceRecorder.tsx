@@ -16,9 +16,10 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 interface VoiceRecorderProps {
   openAiApiKey: string;
   onTranscriptionComplete: (transcription: string) => void;
+  onOfflineQueued?: () => void;
 }
 
-export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }: VoiceRecorderProps) {
+export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete, onOfflineQueued }: VoiceRecorderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { isOffline } = useNetwork();
@@ -45,7 +46,7 @@ export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }:
       Alert.alert(
         'Recording Saved Offline',
         'Your recording has been saved and will be processed when you\'re back online.',
-        [{ text: 'OK', onPress: () => onTranscriptionComplete('') }]
+        [{ text: 'OK', onPress: () => onOfflineQueued && onOfflineQueued() }]
       );
     },
     jobType: 'voice_note'
@@ -78,6 +79,10 @@ export default function VoiceRecorder({ openAiApiKey, onTranscriptionComplete }:
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.titleContainer}>
+        <Text style={[styles.centeredTitle, { color: colors.text }]}>Voice Recorder</Text>
+        <View style={styles.titleUnderline} />
+      </View>
       <View style={styles.content}>
         {/* Offline Status Indicator */}
         {isOffline && (
@@ -142,6 +147,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+  },
+  titleContainer: {
+    alignItems: 'center',
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#f89448',
+    marginTop: 8,
+  },
+  centeredTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    fontFamily: 'Roboto',
   },
   content: {
     flex: 1,

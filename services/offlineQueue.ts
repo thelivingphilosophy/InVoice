@@ -140,9 +140,13 @@ export class OfflineQueueService {
 
       for (const item of pendingItems) {
         try {
-          await this.processItem(item);
-          // Remove successfully processed item from queue
-          await this.removeFromQueue(item.id);
+          const wasProcessed = await this.processItem(item);
+          if (wasProcessed) {
+            // Remove successfully processed item from queue
+            await this.removeFromQueue(item.id);
+            console.log(`✅ Successfully processed and removed item ${item.id}`);
+          }
+          // Note: if wasProcessed is false, the item was already removed (e.g., missing file)
           
           if (onProgress) {
             const status = await this.getQueueStatus();
@@ -163,7 +167,7 @@ export class OfflineQueueService {
     }
   }
 
-  private async processItem(item: PendingTranscription): Promise<void> {
+  private async processItem(item: PendingTranscription): Promise<boolean> {
     if (!this.transcriptionService) {
       throw new Error('Transcription service not initialized');
     }
@@ -173,7 +177,10 @@ export class OfflineQueueService {
     // Check if local file still exists
     const fileInfo = await FileSystem.getInfoAsync(item.localAudioPath);
     if (!fileInfo.exists) {
-      throw new Error(`Local audio file not found: ${item.localAudioPath}`);
+      console.log(`⚠️ Local audio file not found: ${item.localAudioPath} - removing from queue`);
+      // Remove this item from queue since the file is missing
+      await this.removeFromQueue(item.id);
+      return false; // Not processed, just removed
     }
 
     // Transcribe the audio
@@ -192,6 +199,7 @@ export class OfflineQueueService {
 
     // Clean up local audio file
     await FileSystem.deleteAsync(item.localAudioPath, { idempotent: true });
+    return true; // Successfully processed
   }
 
   private async processVoiceNote(transcription: string, item: PendingTranscription): Promise<void> {
@@ -199,34 +207,63 @@ export class OfflineQueueService {
     const { JobStorageService } = await import('./jobStorage');
     const storageService = new JobStorageService();
 
-    // Get existing jobs to determine next voice recording number
-    const existingJobs = await storageService.getAllJobs();
-    const voiceRecordingCount = existingJobs.filter(job => 
-      job.customer?.startsWith('Voice Recording ')
-    ).length;
-    const nextNumber = voiceRecordingCount + 1;
-
     // Use original timestamp from the recording if available, otherwise use current time
-    const originalTimestamp = item.timestamp ? new Date(item.timestamp) : new Date();
     const now = new Date();
     
-    const jobData = {
-      id: Date.now().toString(),
-      customer: `Voice Recording ${nextNumber}`,
-      jobType: 'Voice Note',
-      equipment: '',
-      cost: '',
-      location: '',
-      additionalNotes: transcription,
-      dateCreated: originalTimestamp.toISOString(), // Use original recording time
-      dateCompleted: now.toISOString(), // Use current time as completion time
-      status: 'completed' as const,
-      totalSteps: 1,
-      completedSteps: 1,
-    };
+    // Try to find an existing pending voice recording job to update
+    const allJobs = await storageService.getAllJobs();
+    const pendingVoiceJobs = allJobs.filter(job => 
+      job.jobType === 'Voice Note' && 
+      job.status === 'pending_transcription'
+    );
+    
+    let jobToUpdate = null;
+    if (pendingVoiceJobs.length > 0) {
+      // Find the most recent pending voice job (likely the one we want to update)
+      pendingVoiceJobs.sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
+      jobToUpdate = pendingVoiceJobs[0];
+      console.log(`🔍 Found pending voice job to update: ${jobToUpdate.title}`);
+    }
+    
+    if (jobToUpdate) {
+      // Update the existing job
+      const updatedJob = {
+        ...jobToUpdate,
+        additionalNotes: transcription,
+        dateCompleted: now.toISOString(),
+        status: 'completed' as const,
+        completedSteps: 1,
+      };
+      
+      await storageService.saveJob(updatedJob);
+      console.log(`✅ Updated existing voice job: ${jobToUpdate.title}`);
+    } else {
+      // Create new job only if no pending job found
+      const completedVoiceRecordings = allJobs.filter(job => 
+        job.jobType === 'Voice Note' && job.status === 'completed'
+      );
+      const nextNumber = completedVoiceRecordings.length + 1;
+      
+      const originalTimestamp = item.timestamp ? new Date(item.timestamp) : new Date();
+      const jobData = {
+        id: Date.now().toString(),
+        title: `Voice Recording ${nextNumber}`,
+        customer: 'Voice Recording',
+        jobType: 'Voice Note',
+        equipment: '',
+        cost: '',
+        location: '',
+        additionalNotes: transcription,
+        dateCreated: originalTimestamp.toISOString(),
+        dateCompleted: now.toISOString(),
+        status: 'completed' as const,
+        totalSteps: 1,
+        completedSteps: 1,
+      };
 
-    await storageService.saveJob(jobData);
-    console.log(`✅ Saved offline voice note as job: Voice Recording ${nextNumber}`);
+      await storageService.saveJob(jobData);
+      console.log(`✅ Created new voice job: Voice Recording ${nextNumber}`);
+    }
   }
 
   private async processWorkflowStep(transcription: string, item: PendingTranscription): Promise<void> {
@@ -235,6 +272,14 @@ export class OfflineQueueService {
     const storageService = new JobStorageService();
 
     console.log(`🔄 Processing workflow step ${item.stepIndex} transcription:`, transcription);
+    console.log(`📋 Queue item details:`, {
+      id: item.id,
+      jobType: item.jobType,
+      stepIndex: item.stepIndex,
+      jobId: item.jobId,
+      metadataJobId: item.metadata?.jobId,
+      timestamp: item.timestamp
+    });
     
     try {
       const jobs = await storageService.getAllJobs();
@@ -245,16 +290,23 @@ export class OfflineQueueService {
       if (targetJobId) {
         jobToUpdate = jobs.find(job => job.id === targetJobId);
         console.log(`🔍 Looking for job with ID: ${targetJobId}`);
+        if (jobs.find(job => job.id === targetJobId)) {
+          console.log(`✅ Found job by ID: ${targetJobId}`);
+        } else {
+          console.log(`❌ Job with ID ${targetJobId} not found in ${jobs.length} total jobs`);
+          console.log(`📋 Available job IDs:`, jobs.map(j => j.id));
+        }
       }
       
       // If not found by ID, find the most recent job with pending_transcription status
       if (!jobToUpdate) {
         const pendingJobs = jobs.filter(job => job.status === 'pending_transcription');
+        console.log(`🔍 Found ${pendingJobs.length} pending jobs out of ${jobs.length} total jobs`);
         if (pendingJobs.length > 0) {
           // Sort by creation date and get the most recent
           pendingJobs.sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
           jobToUpdate = pendingJobs[0];
-          console.log(`🔍 Found pending job: ${jobToUpdate.id} (status: ${jobToUpdate.status})`);
+          console.log(`🔍 Selected pending job: ${jobToUpdate.id} (status: ${jobToUpdate.status})`);
         }
       }
       
@@ -275,57 +327,91 @@ export class OfflineQueueService {
       // Create updated job with transcription
       const updatedJob = { ...jobToUpdate };
       
-      // Map step index to job fields
+      // Map step index to job fields properly
       switch (item.stepIndex) {
         case 0:
+          // Update the customer field directly
           updatedJob.customer = transcription;
+          console.log(`📝 Updated customer field to "${transcription}"`);
           break;
         case 1:
           updatedJob.jobType = transcription;
+          console.log(`📝 Updated jobType to "${transcription}"`);
           break;
         case 2:
           updatedJob.equipment = transcription;
+          console.log(`📝 Updated equipment to "${transcription}"`);
           break;
         case 3:
           updatedJob.cost = transcription;
+          console.log(`📝 Updated cost to "${transcription}"`);
           break;
         case 4:
-          updatedJob.additionalNotes = transcription;
+          // Clean up any existing additional notes and add the new ones
+          let existingNotes = updatedJob.additionalNotes || '';
+          // Remove any offline metadata
+          existingNotes = existingNotes.replace(/Job completed offline\. .*?\n\n/, '');
+          // Keep customer info if it exists
+          const customerMatch = existingNotes.match(/Customer: .*?\n\n?/);
+          const customerInfo = customerMatch ? customerMatch[0] : '';
+          const finalNotes = customerInfo + transcription;
+          updatedJob.additionalNotes = finalNotes;
+          console.log(`📝 Updated additionalNotes to "${transcription}"`);
           break;
         default:
           console.log(`⚠️ Unknown step index: ${item.stepIndex}`);
           return;
       }
       
-      // Check if all workflow steps are now processed (no more pending transcriptions)
-      const allStepsProcessed = updatedJob.customer !== 'Pending Transcription' &&
-                               updatedJob.jobType !== 'Pending Transcription' &&
-                               updatedJob.equipment !== 'Pending Transcription' &&
-                               updatedJob.cost !== 'Pending Transcription' &&
-                               !updatedJob.customer.includes('[Offline Recording') &&
-                               !updatedJob.jobType.includes('[Offline Recording') &&
-                               !updatedJob.equipment.includes('[Offline Recording') &&
-                               !updatedJob.cost.includes('[Offline Recording');
+      // Check if this job has any real transcriptions (not just pending placeholders)
+      const hasRealTranscriptions = (
+        (updatedJob.customer !== 'Pending Transcription' && !updatedJob.customer.includes('[Offline Recording')) ||
+        (updatedJob.jobType !== 'Pending Transcription' && !updatedJob.jobType.includes('[Offline Recording')) ||
+        (updatedJob.equipment !== 'Pending Transcription' && !updatedJob.equipment.includes('[Offline Recording')) ||
+        (updatedJob.cost !== 'Pending Transcription' && !updatedJob.cost.includes('[Offline Recording'))
+      );
+
+      console.log(`🔍 Completion check for job ${jobToUpdate.id}:`, {
+        currentStatus: jobToUpdate.status,
+        hasRealTranscriptions,
+        customer: updatedJob.customer,
+        jobType: updatedJob.jobType,
+        equipment: updatedJob.equipment,
+        cost: updatedJob.cost
+      });
       
-      if (allStepsProcessed) {
+      // If the job was pending_transcription and now has real transcriptions, mark it as completed
+      if (jobToUpdate.status === 'pending_transcription' && hasRealTranscriptions) {
         updatedJob.status = 'completed';
-        console.log('✅ All workflow steps completed, marking job as completed');
+        console.log('✅ Job has transcriptions, marking as completed');
       }
       
       // Update completion timestamp if job is now complete
-      if (allStepsProcessed) {
+      if (updatedJob.status === 'completed') {
         updatedJob.dateCompleted = new Date().toISOString();
       }
       
       // Save the updated job
+      console.log(`💾 About to save job with status: "${updatedJob.status}"`);
       await storageService.saveJob(updatedJob);
-      console.log(`✅ Successfully updated job ${jobToUpdate.id} step ${item.stepIndex} with: "${transcription}"`);
+      console.log(`✅ Successfully saved job ${jobToUpdate.id} step ${item.stepIndex} with: "${transcription}"`);
+      console.log(`📝 Updated job status from "${jobToUpdate.status}" to "${updatedJob.status}"`);
+      
+      // Verify the job was actually saved with the correct status
+      const verifyJob = await storageService.getJobById(updatedJob.id);
+      if (verifyJob) {
+        console.log(`🔍 Verification: Job ${updatedJob.id} now has status: "${verifyJob.status}"`);
+      } else {
+        console.log(`❌ Verification failed: Could not find job ${updatedJob.id} after save`);
+      }
+      
       console.log(`📝 Updated job data:`, {
         customer: updatedJob.customer,
         jobType: updatedJob.jobType,
         equipment: updatedJob.equipment,
         cost: updatedJob.cost,
-        status: updatedJob.status
+        status: updatedJob.status,
+        hasCustomerInfo: updatedJob.additionalNotes?.includes('Customer:')
       });
       
     } catch (error) {

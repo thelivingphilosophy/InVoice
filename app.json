@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "tradesman-app",
+    "name": "InVoice",
     "slug": "tradesman-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,6 +8,7 @@
     "scheme": "tradesmanapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "owner": "jamesgcussen",
     "ios": {
       "supportsTablet": true
     },
@@ -17,7 +18,13 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.tradesmanapp"
+      "package": "com.tradesmanapp.voice",
+      "versionCode": 1,
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -32,12 +39,18 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#1e4360"
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "051360a2-dddd-4d77-ab02-6c350e2b3fb4"
+      }
     }
   }
 }

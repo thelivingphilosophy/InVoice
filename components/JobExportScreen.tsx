@@ -165,13 +165,30 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onClose}>
-          <IconSymbol name="chevron.left" size={24} color={colors.text} />
-          <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
+      <View style={[styles.header, { paddingTop: 60 }]}>
+        <TouchableOpacity 
+          style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]} 
+          onPress={onClose}
+        >
+          <IconSymbol name="chevron.left" size={16} color="white" />
+          <Text style={[styles.backText, { color: 'white' }]}>Back</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Export Jobs</Text>
-        <View style={{ width: 60 }} />
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>Export Jobs</Text>
+          <View style={styles.titleUnderline} />
+        </View>
+        <View style={styles.rightSection}>
+          <TouchableOpacity
+            style={[styles.selectAllButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]}
+            onPress={selectAllJobs}
+          >
+            <IconSymbol 
+              name={selectedJobs.size === jobs.length ? "checkmark.square" : "square"} 
+              size={16} 
+              color="white" 
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {jobs.length === 0 ? (
@@ -182,21 +199,8 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
         </View>
       ) : (
         <>
-          {/* Selection Controls */}
+          {/* Selection Count */}
           <View style={styles.selectionControls}>
-            <TouchableOpacity
-              style={[styles.selectAllButton, { backgroundColor: colors.background, borderColor: colors.text }]}
-              onPress={selectAllJobs}
-            >
-              <IconSymbol 
-                name={selectedJobs.size === jobs.length ? "checkmark.square" : "square"} 
-                size={20} 
-                color={colors.text} 
-              />
-              <Text style={[styles.selectAllText, { color: colors.text }]}>
-                {selectedJobs.size === jobs.length ? 'Deselect All' : 'Select All'}
-              </Text>
-            </TouchableOpacity>
             <Text style={[styles.selectionCount, { color: colors.text }]}>
               {selectedJobs.size} of {jobs.length} selected
             </Text>
@@ -258,7 +262,7 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
             <TouchableOpacity
               style={[
                 styles.exportButton,
-                { backgroundColor: '#0a7ea4', opacity: selectedJobs.size > 0 ? 1 : 0.5 }
+                { backgroundColor: colors.buttonSecondary, opacity: selectedJobs.size > 0 ? 1 : 0.5 }
               ]}
               onPress={exportAsEmail}
               disabled={isExporting || selectedJobs.size === 0}
@@ -274,7 +278,7 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
             <TouchableOpacity
               style={[
                 styles.exportButton,
-                { backgroundColor: '#8B5CF6', opacity: selectedJobs.size > 0 ? 1 : 0.5 }
+                { backgroundColor: colors.buttonTertiary, opacity: selectedJobs.size > 0 ? 1 : 0.5 }
               ]}
               onPress={exportAsTextFile}
               disabled={isExporting || selectedJobs.size === 0}
@@ -296,7 +300,7 @@ export default function JobExportScreen({ onClose }: JobExportScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
+    padding: 20,
   },
   centered: {
     justifyContent: 'center',
@@ -306,20 +310,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    paddingTop: 10,
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    minWidth: 70,
   },
   backText: {
-    fontSize: 16,
-    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rightSection: {
+    width: 70,
+    alignItems: 'flex-end',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#f89448',
+    marginTop: 8,
   },
   loadingText: {
     fontSize: 16,
@@ -330,25 +354,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   selectionControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingBottom: 15,
   },
   selectAllButton: {
-    flexDirection: 'row',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
+    justifyContent: 'center',
     borderWidth: 1,
-  },
-  selectAllText: {
-    fontSize: 16,
-    marginLeft: 8,
   },
   selectionCount: {
     fontSize: 14,
+    marginTop: 8,
   },
   jobsList: {
     flex: 1,
