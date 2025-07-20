@@ -1,26 +1,71 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Tradesman App Color Palette
+ * Based on brand colors: #1e4360 (primary) and #f89448 (accent)
  */
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#0a7ea4';
+// Brand Colors
+const primaryColor = '#1e4360';      // Dark blue-gray (main background, headers)
+const accentColor = '#f89448';       // Warm orange (main actions, highlights)
+
+// Semantic Colors
+const successColor = '#22c55e';      // Green (completed, success states)
+const warningColor = '#fbbf24';      // Amber (warnings, pending transcription)
+const errorColor = '#ef4444';        // Red (errors, destructive actions)
+const infoColor = '#3b82f6';         // Blue (info, pending states)
+
+// Button progression colors (from accent down to complementary)
+const buttonPrimary = accentColor;   // #f89448 - Main action (Start Workflow)
+const buttonSecondary = '#e67e22';   // Darker orange - Export Jobs
+const buttonTertiary = '#d35400';    // Even darker orange - Voice Recorder  
+const buttonQuaternary = '#a0522d';  // Brown-orange - Manual Entry
+
+// Neutral Colors
+const lightBackground = '#f8fafc';   // Very light gray
+const darkBackground = primaryColor; // Use primary color as dark background
+const lightText = '#1e293b';         // Dark gray for light mode
+const darkText = '#f1f5f9';          // Light gray for dark mode
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: lightText,
+    background: lightBackground,
+    surface: '#ffffff',
+    tint: accentColor,
+    primary: primaryColor,
+    accent: accentColor,
+    success: successColor,
+    warning: warningColor,
+    error: errorColor,
+    info: infoColor,
+    icon: '#64748b',
+    tabIconDefault: '#64748b',
+    tabIconSelected: accentColor,
+    border: '#e2e8f0',
+    muted: '#94a3b8',
+    buttonPrimary: buttonPrimary,
+    buttonSecondary: buttonSecondary,
+    buttonTertiary: buttonTertiary,
+    buttonQuaternary: buttonQuaternary,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: darkText,
+    background: darkBackground,
+    surface: primaryColor,
+    tint: accentColor,
+    primary: primaryColor,
+    accent: accentColor,
+    success: successColor,
+    warning: warningColor,
+    error: errorColor,
+    info: infoColor,
+    icon: '#94a3b8',
+    tabIconDefault: '#94a3b8',
+    tabIconSelected: accentColor,
+    border: '#334155',
+    muted: '#64748b',
+    buttonPrimary: buttonPrimary,
+    buttonSecondary: buttonSecondary,
+    buttonTertiary: buttonTertiary,
+    buttonQuaternary: buttonQuaternary,
   },
 };

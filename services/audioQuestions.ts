@@ -1,6 +1,6 @@
 import { Audio } from 'expo-av';
 
-export type VoiceTone = 'friendly' | 'professional' | 'casual' | 'default';
+export type VoiceTone = 'casual' | 'direct' | 'whacky' | 'default';
 
 class GlobalAudioManager {
   private static instance: GlobalAudioManager;
@@ -67,6 +67,7 @@ export class AudioQuestionService {
       
       // Construct audio file path based on tone and question number
       const audioPath = this.getAudioPath(questionNumber, tone);
+      console.log(`🎵 Audio path resolved successfully for ${tone}-${questionNumber}`);
       
       const { sound } = await Audio.Sound.createAsync(
         audioPath,
@@ -96,6 +97,8 @@ export class AudioQuestionService {
   }
 
   private getAudioPath(questionNumber: number, tone: VoiceTone) {
+    console.log(`🎵 DEBUG: getAudioPath called with tone: ${tone}, question: ${questionNumber}`);
+    
     // Static mapping of all available audio files
     const audioFiles: { [key: string]: any } = {
       // Casual files
@@ -122,17 +125,21 @@ export class AudioQuestionService {
 
     // If default tone, use TTS
     if (tone === 'default') {
+      console.log(`🎵 DEBUG: Default tone specified, throwing error to use TTS fallback`);
       throw new Error(`Audio files not available for tone: ${tone} - using TTS fallback`);
     }
 
     const audioKey = `${tone}-${questionNumber}`;
+    console.log(`🎵 DEBUG: Looking for audio key: ${audioKey}`);
+    console.log(`🎵 DEBUG: Available audio keys:`, Object.keys(audioFiles));
+    
     const audioPath = audioFiles[audioKey];
     
     if (audioPath) {
       console.log(`🎵 Found audio file for: ${audioKey}`);
       return audioPath;
     } else {
-      console.log(`Audio file not found for key: ${audioKey}, using TTS fallback`);
+      console.log(`🎵 DEBUG: Audio file not found for key: ${audioKey}, using TTS fallback`);
       throw new Error(`Audio file not found for tone: ${tone}, question: ${questionNumber}`);
     }
   }

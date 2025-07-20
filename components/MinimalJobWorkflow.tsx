@@ -9,7 +9,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import { useAudioRecording } from '@/hooks/useAudioRecording';
+import { useOfflineAudioRecording } from '@/hooks/useOfflineAudioRecording';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { TranscriptionService } from '@/services/transcription';
 import { JobStorageService } from '@/services/jobStorage';
 import { AudioQuestionService } from '@/services/audioQuestions';
@@ -36,6 +37,7 @@ export default function MinimalJobWorkflow({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { voiceTone } = useSettings();
+  const { isOffline } = useNetwork();
   
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [state, setState] = useState<State>('ready');
@@ -49,10 +51,148 @@ export default function MinimalJobWorkflow({
   const storageService = new JobStorageService();
   const audioQuestionServiceRef = useRef(new AudioQuestionService());
   const audioQuestionService = audioQuestionServiceRef.current;
-  const { startRecording, stopRecording, formatDuration, state: recordingState } = useAudioRecording();
+  
+  // Track offline recordings for the entire workflow
+  const [offlineRecordings, setOfflineRecordings] = useState<string[]>([]);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  
+  const { 
+    startRecording, 
+    stopRecording, 
+    formatDuration, 
+    state: recordingState 
+  } = useOfflineAudioRecording({
+    apiKey: openAiApiKey,
+    onTranscriptionComplete: (transcription, isFromOfflineQueue) => {
+      if (!isFromOfflineQueue) {
+        // Handle immediate transcription
+        handleTranscriptionResult(transcription);
+      }
+    },
+    onOfflineQueued: (queueId) => {
+      // Store offline recording ID for later processing
+      setOfflineRecordings(prev => [...prev, queueId]);
+      
+      // Continue to next step automatically in offline mode
+      handleOfflineStep();
+    },
+    jobType: 'workflow_step',
+    stepIndex: currentStepIndex,
+    metadata: { 
+      workflowId: currentJobId,
+      jobId: currentJobId
+    }
+  });
+
+  const handleTranscriptionResult = (transcription: string) => {
+    if (transcription.trim()) {
+      // Save answer
+      const newAnswers = [...answers];
+      newAnswers[currentStepIndex] = transcription.trim();
+      setAnswers(newAnswers);
+      
+      // Move to next step
+      const nextIndex = currentStepIndex + 1;
+      
+      if (nextIndex >= DEFAULT_JOB_STEPS.length) {
+        // Move to completion view
+        setTimeout(() => {
+          setCurrentStepIndex(DEFAULT_JOB_STEPS.length);
+          setState('review');
+        }, 1000);
+      } else {
+        // Next question
+        setCurrentStepIndex(nextIndex);
+        setTimeout(() => speakQuestion(nextIndex), 1500);
+      }
+    }
+  };
+
+  const handleOfflineStep = () => {
+    // Mark this step as having an offline recording
+    const newAnswers = [...answers];
+    newAnswers[currentStepIndex] = `[Offline Recording - Will be processed when online]`;
+    setAnswers(newAnswers);
+    
+    // Continue to next step
+    const nextIndex = currentStepIndex + 1;
+    
+    if (nextIndex >= DEFAULT_JOB_STEPS.length) {
+      // Move to completion view
+      setTimeout(() => {
+        setCurrentStepIndex(DEFAULT_JOB_STEPS.length);
+        setState('review');
+      }, 1000);
+    } else {
+      // Next question
+      setCurrentStepIndex(nextIndex);
+      setTimeout(() => speakQuestion(nextIndex), 1500);
+    }
+    setState('ready');
+  };
+
+  const saveWorkflowProgress = async () => {
+    try {
+      // Save current workflow state
+      const workflowData = {
+        id: Date.now().toString(),
+        currentStepIndex,
+        answers,
+        timestamp: new Date().toISOString(),
+        isOffline: true,
+      };
+      
+      // Save progress and return to home
+      Alert.alert(
+        'Progress Saved',
+        'Your workflow progress has been saved. You can resume when back online.',
+        [{ text: 'OK', onPress: onCancel }]
+      );
+    } catch (error) {
+      console.error('Failed to save workflow progress:', error);
+      Alert.alert('Error', 'Failed to save progress');
+    }
+  };
 
   useEffect(() => {
     isMountedRef.current = true;
+    
+    // Set a consistent job ID for the entire workflow at the start
+    if (!currentJobId) {
+      const workflowJobId = Date.now().toString();
+      setCurrentJobId(workflowJobId);
+      console.log(`🆔 Set workflow job ID: ${workflowJobId}`);
+      
+      // Create the initial job record immediately so offline recordings can reference it
+      const createInitialJob = async () => {
+        try {
+          const now = new Date();
+          const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          
+          const initialJob = {
+            id: workflowJobId,
+            title: timestamp, // Use title for display
+            customer: 'Question Skipped',
+            jobType: 'Question Skipped',
+            equipment: 'Question Skipped',
+            cost: 'Question Skipped',
+            additionalNotes: '',
+            dateCreated: now.toISOString(),
+            dateCompleted: '',
+            status: 'in-progress' as const,
+            totalSteps: DEFAULT_JOB_STEPS.length,
+            completedSteps: 0,
+          };
+          
+          await storageService.saveJob(initialJob);
+          console.log(`💾 Created initial job record: ${workflowJobId}`);
+        } catch (error) {
+          console.error('Failed to create initial job:', error);
+        }
+      };
+      
+      createInitialJob();
+    }
     
     // Initialize TTS
     const initializeTts = async () => {
@@ -166,6 +306,7 @@ export default function MinimalJobWorkflow({
       // First try to play recorded audio if not using default
       if (voiceTone !== 'default') {
         try {
+          console.log(`🗣️ DEBUG: Attempting to play audio for tone: ${voiceTone}, question: ${questionNumber}`);
           await audioQuestionService.playQuestion(questionNumber, voiceTone);
           
           // Set a timer to change state to ready after a reasonable time
@@ -180,7 +321,7 @@ export default function MinimalJobWorkflow({
           
           return;
         } catch (audioError) {
-          console.log('Audio playback failed, falling back to TTS:', audioError);
+          console.log('🗣️ DEBUG: Audio playback failed, falling back to TTS:', audioError);
         }
       }
 
@@ -298,39 +439,10 @@ export default function MinimalJobWorkflow({
       return;
     }
 
-    try {
-      const result = await transcriptionService.transcribeAudio(audioUri);
-      
-      if (result.success && result.text.trim()) {
-        // Save answer
-        const newAnswers = [...answers];
-        newAnswers[currentStepIndex] = result.text.trim();
-        setAnswers(newAnswers);
-        
-        // Move to next step
-        const nextIndex = currentStepIndex + 1;
-        
-        if (nextIndex >= DEFAULT_JOB_STEPS.length) {
-          // Move to completion view with a delay to let processing finish
-          setTimeout(() => {
-            setCurrentStepIndex(DEFAULT_JOB_STEPS.length); // Set to completion state
-            setState('review');
-          }, 1000); // 1 second delay to let processing UI finish
-        } else {
-          // Next question
-          setCurrentStepIndex(nextIndex);
-          // Wait a bit longer to ensure UI has updated and previous operations are complete
-          setTimeout(() => speakQuestion(nextIndex), 1500);
-        }
-      } else {
-        Alert.alert('Transcription Failed', result.error || 'Could not transcribe audio');
-        setState('ready');
-      }
-    } catch (error) {
-      console.error('Transcription error:', error);
-      Alert.alert('Error', 'Failed to transcribe audio');
-      setState('ready');
-    }
+    // The useOfflineAudioRecording hook handles transcription or queuing automatically
+    // If online, handleTranscriptionResult will be called
+    // If offline, onOfflineQueued will be called
+    setState('ready');
   };
 
   const completeWorkflow = async (finalAnswers: string[]) => {
@@ -524,26 +636,54 @@ export default function MinimalJobWorkflow({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
-          style={[styles.backButton, { backgroundColor: '#ffffff', borderColor: '#000000' }]}
+          style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]}
           onPress={() => {
             Alert.alert(
               'Leave Workflow',
               'Progress will be lost. Do you wish to proceed?',
               [
                 { text: 'No', style: 'cancel' },
-                { text: 'Yes', onPress: onCancel },
+                { 
+                  text: 'Yes', 
+                  onPress: async () => {
+                    // Delete the job that was created for this workflow
+                    if (currentJobId) {
+                      try {
+                        await storageService.deleteJob(currentJobId);
+                        console.log(`🗑️ Deleted abandoned workflow job: ${currentJobId}`);
+                      } catch (error) {
+                        console.error('Failed to delete abandoned job:', error);
+                      }
+                    }
+                    onCancel();
+                  }
+                },
               ]
             );
           }}
         >
-          <IconSymbol name="house" size={16} color="#000000" />
-          <Text style={[styles.backText, { color: '#000000' }]}>Home</Text>
+          <IconSymbol name="house" size={16} color="white" />
+          <Text style={[styles.backText, { color: 'white' }]}>Home</Text>
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Job Entry</Text>
-        <TouchableOpacity onPress={repeatQuestion}>
-          <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
-        </TouchableOpacity>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>Job Entry</Text>
+        </View>
+        <View style={styles.rightSection}>
+          <TouchableOpacity onPress={repeatQuestion}>
+            <IconSymbol name="speaker.wave.2" size={24} color={colors.tint} />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Offline Indicator */}
+      {isOffline && (
+        <View style={[styles.offlineIndicator, { backgroundColor: '#ff9500' }]}>
+          <IconSymbol name="wifi.slash" size={16} color="white" />
+          <Text style={styles.offlineText}>
+            Offline Mode - Recordings will be saved for later processing
+          </Text>
+        </View>
+      )}
 
       {/* Progress */}
       <View style={styles.progressContainer}>
@@ -609,37 +749,74 @@ export default function MinimalJobWorkflow({
             style={[styles.mainButton, { backgroundColor: '#10b981' }]}
             onPress={async () => {
               const now = new Date();
-              const jobData: JobData = {
-                id: Date.now().toString(),
-                customer: answers[0] || '',
-                jobType: answers[1] || '',
-                equipment: answers[2] || '',
-                cost: answers[3] || '',
-                additionalNotes: answers[4] || '',
-                dateCreated: now.toISOString(),
-                dateCompleted: now.toISOString(),
-                status: 'completed',
-                totalSteps: DEFAULT_JOB_STEPS.length,
-                completedSteps: DEFAULT_JOB_STEPS.length,
-              };
+              const hasOfflineRecordings = offlineRecordings.length > 0;
               
-              await storageService.saveJob(jobData);
-              Alert.alert('Success', 'Job saved successfully!', [
-                { text: 'OK', onPress: () => onComplete(jobData) }
+              // Use the existing job ID
+              const jobId = currentJobId!;
+              
+              // Update the existing job with final data
+              const existingJob = await storageService.getJobById(jobId);
+              if (existingJob) {
+                const updatedJob = {
+                  ...existingJob,
+                  customer: answers[0] || existingJob.customer,
+                  jobType: answers[1] || existingJob.jobType,
+                  equipment: answers[2] || existingJob.equipment,
+                  cost: answers[3] || existingJob.cost,
+                  additionalNotes: answers[4] || existingJob.additionalNotes,
+                  dateCompleted: now.toISOString(),
+                  status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
+                  completedSteps: DEFAULT_JOB_STEPS.length,
+                };
+                
+                await storageService.saveJob(updatedJob);
+                console.log(`💾 Updated existing job: ${jobId}`);
+              } else {
+                console.error(`❌ Could not find existing job: ${jobId}`);
+                // Fallback to creating new job
+                const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const jobData: JobData = {
+                  id: jobId,
+                  title: timestamp,
+                  customer: answers[0] || 'Pending Transcription',
+                  jobType: answers[1] || 'Pending Transcription',
+                  equipment: answers[2] || 'Pending Transcription',
+                  cost: answers[3] || 'Pending Transcription',
+                  additionalNotes: answers[4] || '',
+                  dateCreated: now.toISOString(),
+                  dateCompleted: now.toISOString(),
+                  status: hasOfflineRecordings ? 'pending_transcription' : 'completed',
+                  totalSteps: DEFAULT_JOB_STEPS.length,
+                  completedSteps: DEFAULT_JOB_STEPS.length,
+                };
+                await storageService.saveJob(jobData);
+              }
+              
+              const successMessage = hasOfflineRecordings
+                ? `Job saved! Recordings will be transcribed when you're back online.`
+                : 'Job saved successfully!';
+              
+              const finalJob = await storageService.getJobById(jobId);
+              Alert.alert('Success', successMessage, [
+                { text: 'OK', onPress: () => onComplete(finalJob!) }
               ]);
             }}
           >
             <IconSymbol name="checkmark.circle" size={48} color="white" />
-            <Text style={styles.buttonText}>Save Job</Text>
+            <Text style={styles.buttonText}>
+              {offlineRecordings.length > 0 ? 'Save Offline Job' : 'Save Job'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* Previous Answers */}
       <ScrollView style={styles.answersContainer} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.answersTitle, { color: colors.text }]}>
-          {state === 'review' ? 'Review Your Answers:' : 'Progress:'}
-        </Text>
+        {(currentStepIndex > 0 || state === 'review') && (
+          <Text style={[styles.answersTitle, { color: colors.text }]}>
+            {state === 'review' ? 'Review Your Answers:' : 'Job Details:'}
+          </Text>
+        )}
         {(state === 'review' ? DEFAULT_JOB_STEPS : DEFAULT_JOB_STEPS.slice(0, currentStepIndex)).map((step, index) => (
           <View key={index} style={[styles.answerItem, { backgroundColor: colors.background, borderColor: colors.text + '20' }]}>
             <Text style={[styles.answerLabel, { color: colors.text }]}>
@@ -668,14 +845,10 @@ export default function MinimalJobWorkflow({
         
         {state !== 'review' && (
           <TouchableOpacity
-            style={[styles.actionButton, { 
-              backgroundColor: currentStepIndex === DEFAULT_JOB_STEPS.length - 1 ? '#10b981' : '#666' 
-            }]}
+            style={[styles.actionButton, { backgroundColor: '#12273a' }]}
             onPress={skipStep}
           >
-            <Text style={styles.actionButtonText}>
-              {currentStepIndex === DEFAULT_JOB_STEPS.length - 1 ? 'Save Job' : 'Skip This Step'}
-            </Text>
+            <Text style={styles.actionButtonText}>Skip This Step</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -710,9 +883,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  titleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  rightSection: {
+    width: 70, // Match the minWidth of backButton
+    alignItems: 'flex-end',
+  },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  offlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 15,
+    gap: 6,
+  },
+  offlineText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    flex: 1,
   },
   progressContainer: {
     marginBottom: 30,
@@ -737,7 +935,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#0a7ea4' + '10',
     borderWidth: 2,
-    borderColor: '#0a7ea4',
+    borderColor: '#e67e22',
   },
   questionText: {
     fontSize: 18,

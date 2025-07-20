@@ -1,5 +1,6 @@
 export interface JobData {
   id: string;
+  title?: string; // Display title (timestamp-based)
   customer: string;
   jobType: string;
   equipment: string;
@@ -8,7 +9,7 @@ export interface JobData {
   additionalNotes?: string;
   dateCreated: string;
   dateCompleted?: string;
-  status: 'in-progress' | 'completed' | 'pending';
+  status: 'in-progress' | 'completed' | 'pending' | 'pending_transcription';
   totalSteps: number;
   completedSteps: number;
 }

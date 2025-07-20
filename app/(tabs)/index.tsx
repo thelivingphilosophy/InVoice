@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import CustomAlert from '@/components/ui/CustomAlert';
+import { Image } from 'react-native';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import JobDetailsForm, { JobDetails } from '@/components/JobDetailsForm';
 import MinimalJobWorkflow from '@/components/MinimalJobWorkflow';
@@ -10,6 +12,9 @@ import JobExportScreen from '@/components/JobExportScreen';
 import AllJobsScreen from '@/components/AllJobsScreen';
 import SettingsScreen from '@/components/SettingsScreen';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import OfflineIndicator from '@/components/OfflineIndicator';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
+import { useNetwork } from '@/contexts/NetworkContext';
 import { JobStorageService } from '@/services/jobStorage';
 import { JobData, JobWorkflow } from '@/types/job';
 import { Colors } from '@/constants/Colors';
@@ -20,6 +25,7 @@ type ViewMode = 'home' | 'recorder' | 'job-form' | 'workflow' | 'summary' | 'exp
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const { isOffline } = useNetwork();
   const [currentView, setCurrentView] = useState<ViewMode>('home');
   const [openAiApiKey, setOpenAiApiKey] = useState('');
   
@@ -32,6 +38,27 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   
   const storageService = new JobStorageService();
+
+  // Offline sync functionality
+  const { isSyncing, queueStatus, manualSync } = useOfflineSync({
+    apiKey: openAiApiKey,
+    onSyncComplete: (processedCount) => {
+      // Always refresh job data after sync, even if no items were processed
+      loadInitialData();
+      if (processedCount > 0) {
+        Alert.alert(
+          'Sync Complete',
+          `Successfully processed ${processedCount} offline recordings. Job list has been updated.`,
+          [{ text: 'OK' }]
+        );
+      }
+    },
+    onSyncError: (error) => {
+      Alert.alert('Sync Error', `Failed to sync offline recordings: ${error}`);
+      // Still refresh in case some items were processed before the error
+      loadInitialData();
+    },
+  });
 
   // Load data on component mount
   useEffect(() => {
@@ -67,6 +94,24 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [currentView]);
 
+  // Refresh API key when returning from settings
+  useEffect(() => {
+    if (currentView === 'home') {
+      // Reload API key when returning to home view
+      const refreshApiKey = async () => {
+        try {
+          const savedApiKey = await AsyncStorage.getItem('openai_api_key');
+          if (savedApiKey !== openAiApiKey) {
+            setOpenAiApiKey(savedApiKey || '');
+          }
+        } catch (error) {
+          console.error('Failed to refresh API key:', error);
+        }
+      };
+      refreshApiKey();
+    }
+  }, [currentView]);
+
 
   const loadInitialData = async () => {
     try {
@@ -91,17 +136,18 @@ export default function HomeScreen() {
   const handleTranscriptionComplete = async (transcription: string) => {
     // Auto-create job without popup
     try {
-      // Generate auto client name for voice recordings
-      const voiceRecordingCount = jobs.filter(job => 
-        job.customer?.startsWith('Voice Recording ')
-      ).length;
-      const nextNumber = voiceRecordingCount + 1;
+      // Get existing completed voice recordings to determine next number
+      const allJobs = await storageService.getAllJobs();
+      const completedVoiceRecordings = allJobs.filter(job => 
+        job.jobType === 'Voice Note' && job.status === 'completed'
+      );
+      const nextNumber = completedVoiceRecordings.length + 1;
       
-      // Create job data directly
       const now = new Date();
       const jobData: JobData = {
         id: Date.now().toString(),
-        customer: `Voice Recording ${nextNumber}`,
+        title: `Voice Recording ${nextNumber}`, // Use Voice Recording N+1 format
+        customer: 'Voice Recording', // Actual customer type
         jobType: 'Voice Note',
         equipment: '',
         cost: '',
@@ -124,6 +170,45 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Failed to save voice recording job:', error);
       Alert.alert('Error', 'Failed to save voice recording');
+    }
+  };
+
+  const handleOfflineVoiceQueued = async () => {
+    // Create a job with pending_transcription status for offline recordings
+    try {
+      // Get existing completed voice recordings to determine next number
+      const allJobs = await storageService.getAllJobs();
+      const completedVoiceRecordings = allJobs.filter(job => 
+        job.jobType === 'Voice Note' && job.status === 'completed'
+      );
+      const nextNumber = completedVoiceRecordings.length + 1;
+      
+      const now = new Date();
+      const jobData: JobData = {
+        id: Date.now().toString(),
+        title: `Voice Recording ${nextNumber}`, // Use Voice Recording N+1 format
+        customer: 'Voice Recording', // Actual customer type
+        jobType: 'Voice Note',
+        equipment: '',
+        cost: '',
+        location: '',
+        additionalNotes: '',
+        dateCreated: now.toISOString(),
+        dateCompleted: '',
+        status: 'pending_transcription',
+        totalSteps: 1,
+        completedSteps: 0,
+      };
+
+      // Save the job automatically
+      await storageService.saveJob(jobData);
+      await loadInitialData(); // Refresh the jobs list
+      
+      // Return to home view
+      setCurrentView('home');
+    } catch (error) {
+      console.error('Failed to save offline voice recording job:', error);
+      Alert.alert('Error', 'Failed to save offline voice recording');
     }
   };
 
@@ -231,81 +316,48 @@ export default function HomeScreen() {
 
   if (currentView === 'recorder') {
     if (!openAiApiKey.trim()) {
+      // Need to show alert, but do it in useEffect to avoid infinite re-renders
       return (
-        <KeyboardAvoidingView 
-          style={[styles.container, { backgroundColor: colors.background }]}
-          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-          enabled={true}
-        >
-          <ScrollView 
-            contentContainerStyle={styles.scrollContainer}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            enableOnAndroid={true}
-            extraScrollHeight={Platform.OS === 'ios' ? 20 : 100}
-          >
-            <View style={styles.apiKeyContainer}>
-              <Text style={[styles.title, { color: colors.text }]}>
-                API Keys Required
-              </Text>
-              <Text style={[styles.subtitle, { color: colors.text }]}>
-                Enter your OpenAI API key for voice transcription
-              </Text>
-              
-              <Text style={[styles.inputLabel, { color: colors.text }]}>
-                OpenAI API Key (for transcription)
-              </Text>
-              <TextInput
-                style={[styles.apiKeyInput, { backgroundColor: colors.background, borderColor: colors.text, color: colors.text }]}
-                value={openAiApiKey}
-                onChangeText={setOpenAiApiKey}
-                placeholder="sk-..."
-                placeholderTextColor={colors.text + '80'}
-                secureTextEntry
-                returnKeyType="done"
-              />
-              
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#0a7ea4', opacity: openAiApiKey.trim() ? 1 : 0.5 }]}
-                onPress={async () => {
-                  if (openAiApiKey.trim()) {
-                    await AsyncStorage.setItem('openai_api_key', openAiApiKey.trim());
-                    setCurrentView('recorder');
-                  }
-                }}
-                disabled={!openAiApiKey.trim()}
-              >
-                <Text style={styles.buttonText}>Continue</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#666' }]}
-                onPress={() => setCurrentView('home')}
-              >
-                <Text style={styles.buttonText}>Back</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <CustomAlert
+            visible={true}
+            title="API Key Required"
+            message="Please enter your OpenAI API key in Settings to enable voice transcription."
+            buttons={[
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => setCurrentView('home')
+              },
+              {
+                text: "Go to Settings",
+                onPress: () => setCurrentView('settings')
+              }
+            ]}
+            onRequestClose={() => setCurrentView('home')}
+          />
+        </View>
       );
     }
 
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: 60 }]}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]}
             onPress={() => setCurrentView('home')}
           >
-            <IconSymbol name="chevron.left" size={24} color={colors.text} />
-            <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
+            <IconSymbol name="chevron.left" size={16} color="white" />
+            <Text style={[styles.backText, { color: 'white' }]}>Back</Text>
           </TouchableOpacity>
-          <Text style={[styles.title, { color: colors.text }]}>Voice Recorder</Text>
+          <View style={styles.titleContainer} />
+          <View style={styles.rightSection} />
         </View>
         <VoiceRecorder
           key="voice-recorder"
           openAiApiKey={openAiApiKey}
           onTranscriptionComplete={handleTranscriptionComplete}
+          onOfflineQueued={handleOfflineVoiceQueued}
         />
       </View>
     );
@@ -313,68 +365,27 @@ export default function HomeScreen() {
 
   if (currentView === 'workflow') {
     if (!openAiApiKey.trim()) {
+      // Need to show alert, but do it in useEffect to avoid infinite re-renders
       return (
-        <KeyboardAvoidingView 
-          style={[styles.container, { backgroundColor: colors.background }]}
-          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-          enabled={true}
-        >
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setCurrentView('home')}
-            >
-              <IconSymbol name="chevron.left" size={24} color={colors.text} />
-              <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
-            </TouchableOpacity>
-            <Text style={[styles.title, { color: colors.text }]}>API Keys Required</Text>
-            <View style={{ width: 40 }} />
-          </View>
-          
-          <ScrollView 
-            contentContainerStyle={styles.scrollContainer}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            enableOnAndroid={true}
-            extraScrollHeight={Platform.OS === 'ios' ? 20 : 100}
-          >
-            <View style={styles.apiKeyContainer}>
-              <Text style={[styles.title, { color: colors.text }]}>
-                API Key Required
-              </Text>
-              <Text style={[styles.subtitle, { color: colors.text }]}>
-                Enter your OpenAI API key for voice transcription
-              </Text>
-              
-              <Text style={[styles.inputLabel, { color: colors.text }]}>
-                OpenAI API Key (for transcription)
-              </Text>
-              <TextInput
-                style={[styles.apiKeyInput, { backgroundColor: colors.background, borderColor: colors.text, color: colors.text }]}
-                value={openAiApiKey}
-                onChangeText={setOpenAiApiKey}
-                placeholder="sk-..."
-                placeholderTextColor={colors.text + '80'}
-                secureTextEntry
-                returnKeyType="done"
-              />
-              
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#0a7ea4', opacity: openAiApiKey.trim() ? 1 : 0.5 }]}
-                onPress={async () => {
-                  if (openAiApiKey.trim()) {
-                    await AsyncStorage.setItem('openai_api_key', openAiApiKey.trim());
-                    setCurrentView('workflow');
-                  }
-                }}
-                disabled={!openAiApiKey.trim()}
-              >
-                <Text style={styles.buttonText}>Start Workflow</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <CustomAlert
+            visible={true}
+            title="API Key Required"
+            message="Please enter your OpenAI API key in Settings to enable voice transcription for job workflows."
+            buttons={[
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => setCurrentView('home')
+              },
+              {
+                text: "Go to Settings",
+                onPress: () => setCurrentView('settings')
+              }
+            ]}
+            onRequestClose={() => setCurrentView('home')}
+          />
+        </View>
       );
     }
 
@@ -428,14 +439,16 @@ export default function HomeScreen() {
   if (currentView === 'job-form') {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: 60 }]}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: '#f89448', borderColor: '#f89448' }]}
             onPress={handleCancelJob}
           >
-            <IconSymbol name="chevron.left" size={24} color={colors.text} />
-            <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
+            <IconSymbol name="house" size={16} color="white" />
+            <Text style={[styles.backText, { color: 'white' }]}>Home</Text>
           </TouchableOpacity>
+          <View style={styles.titleContainer} />
+          <View style={styles.rightSection} />
         </View>
         <JobDetailsForm
           key="job-form"
@@ -459,30 +472,38 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.content}>
-        {/* Header with Settings */}
-        <View style={styles.homeHeader}>
-          <View style={styles.headerLeft} />
-          <View style={styles.headerCenter}>
-            <Text style={[styles.title, { color: colors.text }]}>
-              Tradesman Voice Assistant
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.text }]}>
-              Step-by-step voice workflow for job documentation
-            </Text>
+    <>
+      <ScrollView 
+        style={[styles.container, { backgroundColor: colors.background }]} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          {/* Header with Settings */}
+          <View style={styles.homeHeader}>
+            <View style={styles.headerLeft} />
+            <View style={styles.headerCenter}>
+              <Image 
+                source={require('@/assets/images/icon.png')} 
+                style={styles.logo}
+              />
+              <Text style={[styles.title, { color: colors.text }]}>
+                InVoice
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.text }]}>
+                Step-by-step voice workflow for job documentation
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={[styles.settingsButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+              onPress={handleSettings}
+            >
+              <IconSymbol name="gearshape" size={20} color="white" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity 
-            style={[styles.settingsButton, { backgroundColor: '#000000', borderColor: '#000000' }]}
-            onPress={handleSettings}
-          >
-            <IconSymbol name="gearshape" size={20} color="white" />
-          </TouchableOpacity>
-        </View>
+
+        {/* Offline Indicator */}
+        <OfflineIndicator />
 
         {/* Resume Workflow Banner */}
         {activeWorkflow && (
@@ -507,7 +528,7 @@ export default function HomeScreen() {
 
         <View style={styles.actions}>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#0a7ea4' }]}
+            style={[styles.actionButton, { backgroundColor: colors.buttonPrimary }]}
             onPress={handleStartNewWorkflow}
           >
             <IconSymbol name="mic.circle" size={32} color="white" />
@@ -516,10 +537,9 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
           
-          {/* Quick Test button removed - use the regular workflow that prompts for API key */}
 
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#FF6B35' }]}
+            style={[styles.actionButton, { backgroundColor: colors.buttonSecondary }]}
             onPress={handleExportJobs}
           >
             <IconSymbol name="square.and.arrow.up" size={32} color="white" />
@@ -527,7 +547,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#666' }]}
+            style={[styles.actionButton, { backgroundColor: colors.buttonTertiary }]}
             onPress={() => setCurrentView('recorder')}
           >
             <IconSymbol name="mic" size={32} color="white" />
@@ -535,7 +555,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#8B5CF6' }]}
+            style={[styles.actionButton, { backgroundColor: colors.buttonQuaternary }]}
             onPress={() => setCurrentView('job-form')}
           >
             <IconSymbol name="doc.text" size={32} color="white" />
@@ -546,17 +566,28 @@ export default function HomeScreen() {
         {jobs.length > 0 && (
           <View style={styles.jobsList}>
             <Text style={[styles.jobsTitle, { color: colors.text }]}>
-              Recent Jobs ({jobs.length})
+              Latest Jobs ({jobs.length})
             </Text>
-            {jobs.slice(-3).reverse().map(job => (
+            {jobs
+              .sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime())
+              .slice(0, 3)
+              .map(job => (
               <TouchableOpacity
                 key={job.id}
-                style={[styles.jobItem, { backgroundColor: colors.background, borderColor: colors.text }]}
+                style={[styles.jobItem, { 
+                  backgroundColor: '#12273a', 
+                  borderColor: colors.border,
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 3, height: 3 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 4,
+                  elevation: 6,
+                }]}
                 onPress={() => handleJobSelect(job)}
               >
                 <View style={styles.jobHeader}>
-                  <Text style={[styles.jobClient, { color: colors.text }]}>
-                    {job.customer || 'Unnamed Customer'}
+                  <Text style={[styles.jobClient, { color: '#ffffff' }]}>
+                    {job.title || job.customer || 'Unnamed Job'}
                   </Text>
                   <View style={[styles.statusBadge, { 
                     backgroundColor: job.status === 'completed' ? '#22c55e20' : '#f59e0b20' 
@@ -568,10 +599,10 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.jobType, { color: colors.text }]}>
-                  {job.jobType || 'General Work'}
+                <Text style={[styles.jobType, { color: '#ffffff' }]}>
+                  {job.jobType === 'Voice Note' ? job.jobType : (job.customer || 'General Work')}
                 </Text>
-                <Text style={[styles.jobProgress, { color: colors.text }]}>
+                <Text style={[styles.jobProgress, { color: '#ffffff' }]}>
                   {job.completedSteps}/{job.totalSteps} steps • {new Date(job.dateCreated).toLocaleDateString()}
                 </Text>
               </TouchableOpacity>
@@ -588,7 +619,7 @@ export default function HomeScreen() {
             
             {/* Export Button */}
             <TouchableOpacity
-              style={[styles.exportButton, { backgroundColor: '#8B5CF6' }]}
+              style={[styles.exportButton, { backgroundColor: colors.buttonTertiary }]}
               onPress={handleExportJobs}
             >
               <IconSymbol name="square.and.arrow.up" size={20} color="white" />
@@ -598,16 +629,18 @@ export default function HomeScreen() {
         )}
       </View>
     </ScrollView>
+
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 50,
+    padding: 20,
   },
   scrollContent: {
-    paddingBottom: 120, // Add space for bottom tabs
+    paddingBottom: 40, // Reduced padding since no bottom tabs
   },
   centered: {
     alignItems: 'center',
@@ -622,28 +655,41 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 10,
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 20,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    minWidth: 70,
   },
   backText: {
-    fontSize: 16,
-    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 36,
+    fontWeight: '900',
     textAlign: 'center',
     marginBottom: 10,
+    letterSpacing: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Roboto' : 'Roboto',
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 140,
     opacity: 0.8,
   },
   loadingText: {
@@ -821,6 +867,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  logo: {
+    width: 200,
+    height: 200,
+    marginTop: 20,
+    marginBottom: 8,
+    resizeMode: 'contain',
+  },
   settingsButton: {
     width: 40,
     height: 40,
@@ -833,5 +886,24 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     tintColor: '#ffffff',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  rightSection: {
+    width: 70,
+    alignItems: 'flex-end',
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#f89448',
+    marginTop: 8,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
